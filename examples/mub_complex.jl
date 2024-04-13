@@ -1,7 +1,9 @@
-include("extension.jl")
+using ConicQKD
 using JuMP
 using Ket
 using LinearAlgebra
+import Hypatia
+import Hypatia.Cones
 import JLD2
 
 "Generates complete set of MUBs for prime `d`"

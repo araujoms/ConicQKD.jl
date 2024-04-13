@@ -1,3 +1,5 @@
+module ConicQKD
+
 using Hypatia
 using LinearAlgebra
 using GenericLinearAlgebra
@@ -13,7 +15,6 @@ import Hypatia.Cones.reset_data
 import Hypatia.Cones.setup_extra_data!
 import Hypatia.Cones.get_nu
 import Hypatia.Cones.set_initial_point!
-import Hypatia.Cones.barrier
 import Hypatia.Cones.update_feas
 import Hypatia.Cones.update_grad
 import Hypatia.Cones.update_hess
@@ -99,3 +100,5 @@ function MOI.modify(opt::Optimizer{T}, ci::MOI.ConstraintIndex{VAF{T},<:NewSuppo
     Solvers.modify_h(opt.solver, idxs, new_h)
     return
 end
+
+end # module ConicQKD
