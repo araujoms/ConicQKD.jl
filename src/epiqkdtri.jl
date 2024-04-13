@@ -159,9 +159,9 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiQKDTri{T,R}) where 
     @views rho_vec = arr[cone.rho_idxs]
     svec_to_smat!(cone.Grho, cone.G * rho_vec, cone.rt2)
     svec_to_smat!(cone.Zrho, cone.Z * rho_vec, cone.rt2)
-    cone.Grho_λ_log = eigvals(Hermitian(cone.Grho)) #abusing the name of the variable to avoid an allocation
-    cone.Zrho_λ_log = eigvals(Hermitian(cone.Zrho))
-    relative_entropy = dot(cone.Grho_λ_log, log.(cone.Grho_λ_log)) - dot(cone.Zrho_λ_log, log.(cone.Zrho_λ_log))
+    Grho_λ = cone.Grho_λ_log = eigvals(Hermitian(cone.Grho))
+    Zrho_λ = cone.Zrho_λ_log = eigvals(Hermitian(cone.Zrho))
+    relative_entropy = dot(Grho_λ, log.(Grho_λ)) - dot(Zrho_λ, log.(Zrho_λ))
     arr[1] = 0.5 * (relative_entropy + sqrt(4 + relative_entropy^2))
     return arr
 end
