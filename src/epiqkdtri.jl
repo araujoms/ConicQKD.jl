@@ -345,8 +345,8 @@ function skron(X)
     R = eltype(X)
     T = real(R)
     iscomplex = R <: Complex
-    dout, din = size(X)
-    sdout, sdin = Cones.svec_length.(Ref(R), size(X))
+    dout, din = size.(Ref(X),(1,2))
+    sdout, sdin = Cones.svec_length.(Ref(R), (dout, din))
     result = Matrix{T}(undef, sdout, sdin)
     symm_kron_full!(result, X, sqrt(T(2)))
     return result
