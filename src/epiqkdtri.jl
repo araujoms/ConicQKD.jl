@@ -78,8 +78,6 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     vec::Vector{T}
     Gvec::Vector{T}
     Zvec::Vector{T}
-    #Variables for hess_prod!
-    V_log::Matrix{R}
 
     function EpiQKDTri{T,R}(Gkraus::Vector, Zkraus::Vector, dim::Int; use_dual::Bool = false) where {T<:Real,R<:RealOrComplex{T}}
         @assert dim > 1
