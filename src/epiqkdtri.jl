@@ -78,6 +78,8 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     vec::Vector{T}
     Gvec::Vector{T}
     Zvec::Vector{T}
+    #Variables for hess_prod!
+    V_log::Matrix{R}
 
     function EpiQKDTri{T,R}(Gkraus::Vector, Zkraus::Vector, dim::Int; use_dual::Bool = false) where {T<:Real,R<:RealOrComplex{T}}
         @assert dim > 1
@@ -331,6 +333,85 @@ end
 #    return prod
 #end
 
+"""Work in progress.. arr->array to multiply by hess."""
+function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDTri{T, R}) where {T <: Real, R <: RealOrComplex{T}}
+    @assert is_feas(cone)
+    @assert cone.grad_updated
+
+    rt2 = cone.rt2
+    rho_idxs = cone.rho_idxs
+    dzdrho = cone.dzdrho
+    dzdV = cone.dzdV
+    z = cone.z
+    tempvec = cone.tempvec
+    temp = cone.mat
+    temp2 = cone.mat2
+    Garr_simG = cone.Gmat3
+    Zarr_simZ = cone.Zmat3
+    arr_G_mat = cone.Gmat4
+    arr_Z_mat = cone.Zmat4
+
+    # TODO: initialize Garr and Zarr ??
+    Garr::Matrix{T}
+    Zarr::Matrix{T}
+
+    # Factorize G(ρ), Z(ρ) and ρ
+    (Grho_λ, Grho_vecs) = cone.Grho_fact
+    (Zrho_λ, Zrho_vecs) = cone.Zrho_fact
+    (rho_λ, rho_vecs) = cone.rho_fact
+
+    # Apply G and Z to ξ
+    cone.is_G_identity ? Garr = arr : svec_to_smat!(Garr, cone.G * arr, cone.rt2)  # Garr = G(ξ)
+    svec_to_smat!(Zarr, cone.Z * arr, cone.rt2)  # Zarr = Z(ξ)
+
+    @inbounds for i in 1:size(arr, 2) # ???? arr is vec or mat????
+
+        ######### ↓↓↓↓↓ NO IDEA ↓↓↓↓↓ #########
+
+        # Hhh * a_h, Hhρ * a_ρ   # ????????
+        @views rho_arr = arr[rho_idxs, i]  # ???? arr is vec or mat????
+        prod[1, i] = (arr[1, i] + dot(dzdrho, rho_arr)) / z^2  # ∇^2_hh = # ????
+        @views @. prod[rho_idxs, i] = prod[1, i] * dzdrho # ???????????????????
+
+        ######### ↑↑↑↑↑ NO IDEA ↑↑↑↑↑ #########
+
+        ####### ↓↓ THINK IT'S GOOD BUT REVISE ↓↓ #######
+
+        # Hρρ * a_ρ
+        # Code corresponding to G
+        @views rho_Garr = Garr[rho_idxs, i]
+        svec_to_smat!(Garr_rho_mat, rho_Garr, rt2)
+        spectral_outer!(Garr_simG, Grho_vecs', Hermitian(Garr_rho_mat, :U), temp2) # (U'_G G(ξ)U_G)
+        Δ2!(cone.Δ2G, Grho_λ, cone.Grho_λ_log)
+        @. temp = cone.Δ2G * Garr_simG  # Γ(Λ)∘(U'_G G(ξ)U_G)
+        spectral_outer!(temp, Grho_vecs, Hermitian(temp, :U), temp2) # U_G[Γ(Λ_G)∘(U'_G G(ξ)U_G)]U'_G
+        d2zdρ2 = smat_to_svec!(tempvec, temp, rt2)
+        if !cone.is_G_identity
+            mul!(d2zdρ2, cone.Gadj, d2zdρ2) # G'{U_G[Γ(Λ)∘(U'_G G(ξ)U_G)]U'_G}
+        end
+        # Code corresponding to Z
+        @views rho_Zarr = Zarr[rho_idxs, i]
+        svec_to_smat!(Zarr_rho_mat, rho_Zarr, rt2)
+        spectral_outer!(Zarr_simZ, Zrho_vecs', Hermitian(Zarr_rho_mat, :U), temp2) # (U'_Z Z(ξ)U_Z)
+        Δ2!(cone.Δ2Z, Zrho_λ, cone.Zrho_λ_log)
+        @. temp = cone.Δ2Z * Zarr_simZ  # Γ(Λ)∘(U'_Z Z(ξ)U_Z)
+        spectral_outer!(temp, Zrho_vecs, Hermitian(temp, :U), temp2)  # U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z
+        smat_to_svec!(tempvec, temp, rt2)
+        mul!(d2zdρ2, cone.Zadj, tempvec, 1, -1)  # Z'{U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z} - G'{U_G[Γ(Λ)∘(U'_G G(ξ)U_G)]U'_G}
+        @views prod[rho_idxs, i] -= d2zdρ2 / z
+
+        # Hessian of log(det(ρ))
+        svec_to_smat!(arr_rho_mat, rho_arr, rt2)  # svec(ξ) -> smat(ξ)
+        spectral_outer!(temp, rho_vecs', Hermitian(arr_rho_mat, :U), temp2)  # U' ξ U
+        ldiv!(Diagonal(rho_λ), temp)  # Λ^-1 U' ξ U
+        rdiv!(temp, Diagonal(rho_λ))  # Λ^-1 U' ξ U Λ^-1
+        spectral_outer!(temp, rho_vecs, Hermitian(temp, :U), temp2)  # U Λ^-1 U' ξ U Λ^-1 U'
+        @views prod[rho_idxs, i] += svec_to_smat!(tempvec, temp, rt2)
+    end
+   
+    return prod
+end
+
 """
 Converts a vector of Kraus operators `K` into a matrix M such that
 svec(sum(K[i]*X*K[i]')) == M*svec(X)
@@ -445,4 +526,149 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractMatrix{Complex{T}}
     end
 
     return skr
+end
+
+function Δ2!(Δ2::Matrix{T}, λ::Vector{T}, log_λ::Vector{T}) where {T <: Real}
+    rteps = sqrt(eps(T))
+    d = length(λ)
+
+    @inbounds for j in 1:d
+        λ_j = λ[j]
+        lλ_j = log_λ[j]
+        for i in 1:(j - 1)
+            λ_i = λ[i]
+            λ_ij = λ_i - λ_j
+            if abs(λ_ij) < rteps
+                Δ2[i, j] = 2 / (λ_i + λ_j)
+            else
+                Δ2[i, j] = (log_λ[i] - lλ_j) / λ_ij
+            end
+        end
+        Δ2[j, j] = inv(λ_j)
+    end
+
+    # make symmetric
+    copytri!(Δ2, 'U')
+    return Δ2
+end
+
+function dder3(
+    cone::EpiTrRelEntropyTri{T, R},
+    dir::AbstractVector{T},
+) where {T <: Real, R <: RealOrComplex{T}}
+    cone.dder3_aux_updated || update_dder3_aux(cone)
+    rt2 = cone.rt2
+    V_idxs = cone.V_idxs
+    W_idxs = cone.W_idxs
+    zi = inv(cone.z)
+    (V_λ, V_vecs) = cone.V_fact
+    (W_λ, W_vecs) = cone.W_fact
+    Δ3_V = cone.Δ3_V
+    Δ3_W = cone.Δ3_W
+    dzdV = cone.dzdV
+    dzdW = cone.dzdW
+    mat = cone.mat
+    mat2 = cone.mat2
+    dder3 = cone.dder3
+
+    u_dir = dir[1]
+    @views v_dir = dir[V_idxs]
+    @views w_dir = dir[W_idxs]
+
+    # v, w
+    # TODO prealloc
+    V_dir = Hermitian(zero(mat), :U)
+    W_dir = Hermitian(zero(mat), :U)
+    V_dir_sim = zero(mat)
+    W_dir_sim = zero(mat)
+    VW_dir_sim = zero(mat)
+    W_part_1 = zero(mat)
+    V_part_1 = zero(mat)
+    d3WlogVdV = zero(mat)
+    diff_dot_V_VV = zero(mat)
+    diff_dot_V_VW = zero(mat)
+    diff_dot_W_WW = zero(mat)
+
+    svec_to_smat!(V_dir.data, v_dir, rt2)
+    svec_to_smat!(W_dir.data, w_dir, rt2)
+    spectral_outer!(V_dir_sim, V_vecs', V_dir, mat)
+    spectral_outer!(W_dir_sim, W_vecs', W_dir, mat)
+    spectral_outer!(VW_dir_sim, V_vecs', W_dir, mat)
+
+    for k in 1:(cone.d)
+        @views mul!(mat2[:, k], cone.Wsim_Δ3[:, :, k], V_dir_sim[:, k])
+    end
+    @. mat = mat2 + mat2'
+    spectral_outer!(mat, V_vecs, Hermitian(mat, :U), mat2)
+    Vvd = smat_to_svec!(zero(w_dir), mat, rt2)
+
+    @. mat = W_dir_sim * cone.Δ2_W
+    spectral_outer!(mat, W_vecs, Hermitian(mat, :U), mat2)
+    Wwd = smat_to_svec!(zero(w_dir), mat, rt2)
+
+    @. mat = VW_dir_sim * cone.Δ2_V
+    spectral_outer!(mat, V_vecs, Hermitian(mat, :U), mat2)
+    VWwd = smat_to_svec!(zero(w_dir), mat, rt2)
+
+    @. mat = V_dir_sim * cone.Δ2_V
+    spectral_outer!(mat, V_vecs, Hermitian(mat, :U), mat2)
+    VWvd = smat_to_svec!(zero(w_dir), mat, rt2)
+
+    const0 = zi * u_dir + dot(v_dir, dzdV) + dot(w_dir, dzdW)
+    const1 =
+        abs2(const0) + zi * (-dot(v_dir, VWwd) + (-dot(v_dir, Vvd) + dot(w_dir, Wwd)) / 2)
+
+    V_part_1a = -const0 * (Vvd + VWwd)
+    W_part_1a = Wwd - VWvd
+
+    # u
+    dder3[1] = zi * const1
+
+    @inbounds @views for j in 1:(cone.d)
+        Vds_j = V_dir_sim[:, j]
+        Wds_j = W_dir_sim[:, j]
+        for i in 1:j
+            Vds_i = V_dir_sim[:, i]
+            Wds_i = W_dir_sim[:, i]
+            DΔ3_V_ij = Diagonal(Δ3_V[:, i, j])
+            DΔ3_W_ij = Diagonal(Δ3_W[:, i, j])
+            diff_dot_V_VV[i, j] = dot(Vds_i, DΔ3_V_ij, Vds_j)
+            diff_dot_W_WW[i, j] = dot(Wds_i, DΔ3_W_ij, Wds_j)
+        end
+        for i in 1:(cone.d)
+            VWds_i = VW_dir_sim[:, i]
+            DΔ3_V_ij = Diagonal(Δ3_V[:, i, j])
+            diff_dot_V_VW[i, j] = dot(VWds_i, DΔ3_V_ij, Vds_j)
+        end
+    end
+
+    # v
+    d3WlogVdV!(d3WlogVdV, Δ3_V, V_λ, V_dir_sim, cone.W_sim, mat)
+    svec_to_smat!(V_part_1, V_part_1a, rt2)
+    @. V_dir_sim /= sqrt(V_λ)'
+    ldiv!(Diagonal(V_λ), V_dir_sim)
+    V_part_2 = d3WlogVdV
+    @. V_part_2 += diff_dot_V_VW + diff_dot_V_VW'
+    mul!(V_part_2, V_dir_sim, V_dir_sim', true, zi)
+    mul!(mat, V_vecs, Hermitian(V_part_2, :U))
+    mul!(V_part_1, mat, V_vecs', true, zi)
+    @views dder3_V = dder3[V_idxs]
+    smat_to_svec!(dder3_V, V_part_1, rt2)
+    @. dder3_V += const1 * dzdV
+
+    # w
+    svec_to_smat!(W_part_1, W_part_1a, rt2)
+    spectral_outer!(mat2, V_vecs, Hermitian(diff_dot_V_VV, :U), mat)
+    axpby!(true, mat2, const0, W_part_1)
+    @. W_dir_sim /= sqrt(W_λ)'
+    ldiv!(Diagonal(W_λ), W_dir_sim)
+    W_part_2 = diff_dot_W_WW
+    mul!(W_part_2, W_dir_sim, W_dir_sim', true, -zi)
+    mul!(mat, W_vecs, Hermitian(W_part_2, :U))
+    mul!(W_part_1, mat, W_vecs', true, zi)
+    @views dder3_W = dder3[W_idxs]
+    smat_to_svec!(dder3_W, W_part_1, rt2)
+    @. dder3_W += const1 * dzdW
+
+    return dder3
 end
