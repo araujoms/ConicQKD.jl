@@ -526,30 +526,6 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractMatrix{Complex{T}}
     return skr
 end
 
-function Δ2!(Δ2::Matrix{T}, λ::Vector{T}, log_λ::Vector{T}) where {T <: Real}
-    rteps = sqrt(eps(T))
-    d = length(λ)
-
-    @inbounds for j in 1:d
-        λ_j = λ[j]
-        lλ_j = log_λ[j]
-        for i in 1:(j - 1)
-            λ_i = λ[i]
-            λ_ij = λ_i - λ_j
-            if abs(λ_ij) < rteps
-                Δ2[i, j] = 2 / (λ_i + λ_j)
-            else
-                Δ2[i, j] = (log_λ[i] - lλ_j) / λ_ij
-            end
-        end
-        Δ2[j, j] = inv(λ_j)
-    end
-
-    # make symmetric
-    copytri!(Δ2, 'U')
-    return Δ2
-end
-
 function dder3(
     cone::EpiTrRelEntropyTri{T, R},
     dir::AbstractVector{T},

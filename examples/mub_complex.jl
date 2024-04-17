@@ -45,10 +45,6 @@ function zgkraus(d::Integer, R)
     return K
 end
 
-function ketbra(v::AbstractVector)
-    return Hermitian(v * v')
-end
-
 "Produces a vector of bases corresponding to the probabilities that Alice and Bob get equal outcomes when measuring in bases C and C^T, respectively, where C is one ouf of `n` MUBs of dimension `d`"
 function bases(d::Integer, n::Integer)
     mub = numerical_mub(d)
