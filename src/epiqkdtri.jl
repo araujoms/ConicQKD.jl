@@ -332,10 +332,9 @@ end
 #end
 
 """Work in progress.. arr->array to multiply by hess."""
-function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDTri{T, R}) where {T <: Real, R <: RealOrComplex{T}}
+function back_hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDTri{T, R}) where {T <: Real, R <: RealOrComplex{T}}
     @assert is_feas(cone)
     @assert cone.grad_updated
-
     rt2 = cone.rt2
     rho_idxs = cone.rho_idxs
     dzdrho = cone.dzdrho
@@ -524,125 +523,4 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractMatrix{Complex{T}}
     end
 
     return skr
-end
-
-function dder3(
-    cone::EpiTrRelEntropyTri{T, R},
-    dir::AbstractVector{T},
-) where {T <: Real, R <: RealOrComplex{T}}
-    cone.dder3_aux_updated || update_dder3_aux(cone)
-    rt2 = cone.rt2
-    V_idxs = cone.V_idxs
-    W_idxs = cone.W_idxs
-    zi = inv(cone.z)
-    (V_λ, V_vecs) = cone.V_fact
-    (W_λ, W_vecs) = cone.W_fact
-    Δ3_V = cone.Δ3_V
-    Δ3_W = cone.Δ3_W
-    dzdV = cone.dzdV
-    dzdW = cone.dzdW
-    mat = cone.mat
-    mat2 = cone.mat2
-    dder3 = cone.dder3
-
-    u_dir = dir[1]
-    @views v_dir = dir[V_idxs]
-    @views w_dir = dir[W_idxs]
-
-    # v, w
-    # TODO prealloc
-    V_dir = Hermitian(zero(mat), :U)
-    W_dir = Hermitian(zero(mat), :U)
-    V_dir_sim = zero(mat)
-    W_dir_sim = zero(mat)
-    VW_dir_sim = zero(mat)
-    W_part_1 = zero(mat)
-    V_part_1 = zero(mat)
-    d3WlogVdV = zero(mat)
-    diff_dot_V_VV = zero(mat)
-    diff_dot_V_VW = zero(mat)
-    diff_dot_W_WW = zero(mat)
-
-    svec_to_smat!(V_dir.data, v_dir, rt2)
-    svec_to_smat!(W_dir.data, w_dir, rt2)
-    spectral_outer!(V_dir_sim, V_vecs', V_dir, mat)
-    spectral_outer!(W_dir_sim, W_vecs', W_dir, mat)
-    spectral_outer!(VW_dir_sim, V_vecs', W_dir, mat)
-
-    for k in 1:(cone.d)
-        @views mul!(mat2[:, k], cone.Wsim_Δ3[:, :, k], V_dir_sim[:, k])
-    end
-    @. mat = mat2 + mat2'
-    spectral_outer!(mat, V_vecs, Hermitian(mat, :U), mat2)
-    Vvd = smat_to_svec!(zero(w_dir), mat, rt2)
-
-    @. mat = W_dir_sim * cone.Δ2_W
-    spectral_outer!(mat, W_vecs, Hermitian(mat, :U), mat2)
-    Wwd = smat_to_svec!(zero(w_dir), mat, rt2)
-
-    @. mat = VW_dir_sim * cone.Δ2_V
-    spectral_outer!(mat, V_vecs, Hermitian(mat, :U), mat2)
-    VWwd = smat_to_svec!(zero(w_dir), mat, rt2)
-
-    @. mat = V_dir_sim * cone.Δ2_V
-    spectral_outer!(mat, V_vecs, Hermitian(mat, :U), mat2)
-    VWvd = smat_to_svec!(zero(w_dir), mat, rt2)
-
-    const0 = zi * u_dir + dot(v_dir, dzdV) + dot(w_dir, dzdW)
-    const1 =
-        abs2(const0) + zi * (-dot(v_dir, VWwd) + (-dot(v_dir, Vvd) + dot(w_dir, Wwd)) / 2)
-
-    V_part_1a = -const0 * (Vvd + VWwd)
-    W_part_1a = Wwd - VWvd
-
-    # u
-    dder3[1] = zi * const1
-
-    @inbounds @views for j in 1:(cone.d)
-        Vds_j = V_dir_sim[:, j]
-        Wds_j = W_dir_sim[:, j]
-        for i in 1:j
-            Vds_i = V_dir_sim[:, i]
-            Wds_i = W_dir_sim[:, i]
-            DΔ3_V_ij = Diagonal(Δ3_V[:, i, j])
-            DΔ3_W_ij = Diagonal(Δ3_W[:, i, j])
-            diff_dot_V_VV[i, j] = dot(Vds_i, DΔ3_V_ij, Vds_j)
-            diff_dot_W_WW[i, j] = dot(Wds_i, DΔ3_W_ij, Wds_j)
-        end
-        for i in 1:(cone.d)
-            VWds_i = VW_dir_sim[:, i]
-            DΔ3_V_ij = Diagonal(Δ3_V[:, i, j])
-            diff_dot_V_VW[i, j] = dot(VWds_i, DΔ3_V_ij, Vds_j)
-        end
-    end
-
-    # v
-    d3WlogVdV!(d3WlogVdV, Δ3_V, V_λ, V_dir_sim, cone.W_sim, mat)
-    svec_to_smat!(V_part_1, V_part_1a, rt2)
-    @. V_dir_sim /= sqrt(V_λ)'
-    ldiv!(Diagonal(V_λ), V_dir_sim)
-    V_part_2 = d3WlogVdV
-    @. V_part_2 += diff_dot_V_VW + diff_dot_V_VW'
-    mul!(V_part_2, V_dir_sim, V_dir_sim', true, zi)
-    mul!(mat, V_vecs, Hermitian(V_part_2, :U))
-    mul!(V_part_1, mat, V_vecs', true, zi)
-    @views dder3_V = dder3[V_idxs]
-    smat_to_svec!(dder3_V, V_part_1, rt2)
-    @. dder3_V += const1 * dzdV
-
-    # w
-    svec_to_smat!(W_part_1, W_part_1a, rt2)
-    spectral_outer!(mat2, V_vecs, Hermitian(diff_dot_V_VV, :U), mat)
-    axpby!(true, mat2, const0, W_part_1)
-    @. W_dir_sim /= sqrt(W_λ)'
-    ldiv!(Diagonal(W_λ), W_dir_sim)
-    W_part_2 = diff_dot_W_WW
-    mul!(W_part_2, W_dir_sim, W_dir_sim', true, -zi)
-    mul!(mat, W_vecs, Hermitian(W_part_2, :U))
-    mul!(W_part_1, mat, W_vecs', true, zi)
-    @views dder3_W = dder3[W_idxs]
-    smat_to_svec!(dder3_W, W_part_1, rt2)
-    @. dder3_W += const1 * dzdW
-
-    return dder3
 end
