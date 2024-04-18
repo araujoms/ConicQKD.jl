@@ -67,6 +67,7 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     d2zdrho2Z::Matrix{T}
     #variables below are just scratch space
     mat::Matrix{R}
+    mat2::Matrix{R}
     Gmat::Matrix{R}
     Zmat::Matrix{R}
     Gmat2::Matrix{R}
@@ -132,6 +133,7 @@ function setup_extra_data!(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex
     cone.Zrho_λ_log = zeros(T, Zd)
 
     cone.mat = zeros(R, d, d)
+    cone.mat2 = zeros(R, d, d)
     cone.Gmat = zeros(R, Gd, Gd)
     cone.Zmat = zeros(R, Zd, Zd)
     cone.Gmat2 = zeros(R, Gd, Gd)
@@ -332,78 +334,65 @@ end
 #end
 
 """Work in progress.. arr->array to multiply by hess."""
-function back_hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDTri{T, R}) where {T <: Real, R <: RealOrComplex{T}}
+function back_hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDTri{T, R}) where {T<:Real,R<:RealOrComplex{T}}
     @assert is_feas(cone)
     @assert cone.grad_updated
     rt2 = cone.rt2
     rho_idxs = cone.rho_idxs
     dzdrho = cone.dzdrho
-    dzdV = cone.dzdV
     z = cone.z
-    tempvec = cone.tempvec
+    tempvec = cone.vec
     temp = cone.mat
-    temp2 = cone.mat2
-    Garr_simG = cone.Gmat3
-    Zarr_simZ = cone.Zmat3
-    arr_G_mat = cone.Gmat4
-    arr_Z_mat = cone.Zmat4
-
-    # TODO: initialize Garr and Zarr ??
-    Garr::Matrix{T}
-    Zarr::Matrix{T}
+    Garr_simG = cone.Gmat2
+    Zarr_simZ = cone.Zmat2
+    Garr = cone.Gmat3
+    Zarr = cone.Zmat3
 
     # Factorize G(ρ), Z(ρ) and ρ
     (Grho_λ, Grho_vecs) = cone.Grho_fact
     (Zrho_λ, Zrho_vecs) = cone.Zrho_fact
     (rho_λ, rho_vecs) = cone.rho_fact
 
-    # Apply G and Z to ξ
-    cone.is_G_identity ? Garr = arr : svec_to_smat!(Garr, cone.G * arr, cone.rt2)  # Garr = G(ξ)
-    svec_to_smat!(Zarr, cone.Z * arr, cone.rt2)  # Zarr = Z(ξ)
+    # For each vector ξ do:
+    @inbounds for i in 1:size(arr, 2)
 
-    @inbounds for i in 1:size(arr, 2) # ???? arr is vec or mat????
+        # Hhh * a_h + Hhρ * a_ρ
+        @views rho_arr = arr[rho_idxs, i]
+        prod[1, i] = (arr[1, i] + dot(dzdrho, rho_arr)) / z^2  # ξ[1]/u^2 + ⟨∇_ρ(u),ξ[ρ]⟩/u^2
 
-        ######### ↓↓↓↓↓ NO IDEA ↓↓↓↓↓ #########
+        # Hhρ * a_h + Hρρ * a_ρ
 
-        # Hhh * a_h, Hhρ * a_ρ   # ????????
-        @views rho_arr = arr[rho_idxs, i]  # ???? arr is vec or mat????
-        prod[1, i] = (arr[1, i] + dot(dzdrho, rho_arr)) / z^2  # ∇^2_hh = # ????
-        @views @. prod[rho_idxs, i] = prod[1, i] * dzdrho # ???????????????????
+        @views @. prod[rho_idxs, i] = prod[1, i] * dzdrho
 
-        ######### ↑↑↑↑↑ NO IDEA ↑↑↑↑↑ #########
-
-        ####### ↓↓ THINK IT'S GOOD BUT REVISE ↓↓ #######
-
-        # Hρρ * a_ρ
         # Code corresponding to G
-        @views rho_Garr = Garr[rho_idxs, i]
-        svec_to_smat!(Garr_rho_mat, rho_Garr, rt2)
-        spectral_outer!(Garr_simG, Grho_vecs', Hermitian(Garr_rho_mat, :U), temp2) # (U'_G G(ξ)U_G)
+        cone.is_G_identity ? svec_to_smat!(Garr, rho_arr, cone.rt2) : svec_to_smat!(Garr, cone.G * rho_arr, cone.rt2)  # Garr = G(ξ)
+        spectral_outer!(Garr_simG, Grho_vecs', Hermitian(Garr, :U), cone.Gmat) # (U'_G G(ξ)U_G)
+        # spectral_outer!(Garr_simG, Grho_vecs', Garr, cone.Gmat) # (U'_G G(ξ)U_G)
         Δ2!(cone.Δ2G, Grho_λ, cone.Grho_λ_log)
         @. temp = cone.Δ2G * Garr_simG  # Γ(Λ)∘(U'_G G(ξ)U_G)
-        spectral_outer!(temp, Grho_vecs, Hermitian(temp, :U), temp2) # U_G[Γ(Λ_G)∘(U'_G G(ξ)U_G)]U'_G
+        spectral_outer!(temp, Grho_vecs, Hermitian(temp, :U), cone.Gmat) # U_G[Γ(Λ_G)∘(U'_G G(ξ)U_G)]U'_G
         d2zdρ2 = smat_to_svec!(tempvec, temp, rt2)
         if !cone.is_G_identity
             mul!(d2zdρ2, cone.Gadj, d2zdρ2) # G'{U_G[Γ(Λ)∘(U'_G G(ξ)U_G)]U'_G}
         end
+
         # Code corresponding to Z
-        @views rho_Zarr = Zarr[rho_idxs, i]
-        svec_to_smat!(Zarr_rho_mat, rho_Zarr, rt2)
-        spectral_outer!(Zarr_simZ, Zrho_vecs', Hermitian(Zarr_rho_mat, :U), temp2) # (U'_Z Z(ξ)U_Z)
+        svec_to_smat!(Zarr, cone.Z * rho_arr, cone.rt2)  # Zarr = Z(ξ)
+        spectral_outer!(Zarr_simZ, Zrho_vecs', Hermitian(Zarr, :U), cone.Zmat) # (U'_Z Z(ξ)U_Z)
         Δ2!(cone.Δ2Z, Zrho_λ, cone.Zrho_λ_log)
         @. temp = cone.Δ2Z * Zarr_simZ  # Γ(Λ)∘(U'_Z Z(ξ)U_Z)
-        spectral_outer!(temp, Zrho_vecs, Hermitian(temp, :U), temp2)  # U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z
+        spectral_outer!(temp, Zrho_vecs, Hermitian(temp, :U), cone.Zmat)  # U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z
         smat_to_svec!(tempvec, temp, rt2)
         mul!(d2zdρ2, cone.Zadj, tempvec, 1, -1)  # Z'{U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z} - G'{U_G[Γ(Λ)∘(U'_G G(ξ)U_G)]U'_G}
         @views prod[rho_idxs, i] -= d2zdρ2 / z
 
         # Hessian of log(det(ρ))
-        svec_to_smat!(arr_rho_mat, rho_arr, rt2)  # svec(ξ) -> smat(ξ)
-        spectral_outer!(temp, rho_vecs', Hermitian(arr_rho_mat, :U), temp2)  # U' ξ U
+        svec_to_smat!(cone.mat, rho_arr, rt2)  # svec(ξ) -> smat(ξ)
+        spectral_outer!(temp, rho_vecs', Hermitian(cone.mat, :U), cone.mat2)  # U' ξ U
         ldiv!(Diagonal(rho_λ), temp)  # Λ^-1 U' ξ U
         rdiv!(temp, Diagonal(rho_λ))  # Λ^-1 U' ξ U Λ^-1
-        spectral_outer!(temp, rho_vecs, Hermitian(temp, :U), temp2)  # U Λ^-1 U' ξ U Λ^-1 U'
-        @views prod[rho_idxs, i] += svec_to_smat!(tempvec, temp, rt2)
+        spectral_outer!(temp, rho_vecs, Hermitian(temp, :U), cone.mat2)  # U Λ^-1 U' ξ U Λ^-1 U'
+        @views prod[rho_idxs, i] += smat_to_svec!(tempvec, temp, rt2)
     end
    
     return prod
