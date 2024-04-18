@@ -450,8 +450,8 @@ end
 """
 Computes `skr` such that `skr*svec(x) = svec(mat*x*mat')` for real `mat`
 """
-function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractMatrix{T}, rt2::T) where {T<:Real}
-    dout, din = size(mat)
+function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{T}, rt2::T) where {T<:Real}
+    dout, din = size.(Ref(mat),(1,2))
 
     col_idx = 1
     @inbounds for l = 1:din
@@ -486,8 +486,8 @@ end
 """
 Computes `skr` such that `skr*svec(x) = svec(mat*x*mat')` for complex `mat`
 """
-function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractMatrix{Complex{T}}, rt2::T) where {T<:Real}
-    dout, din = size(mat)
+function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{Complex{T}}, rt2::T) where {T<:Real}
+    dout, din = size.(Ref(mat),(1,2))
 
     col_idx = 1
     @inbounds for l = 1:din
