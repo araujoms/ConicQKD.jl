@@ -320,18 +320,18 @@ function update_hess(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     return cone.hess
 end
 
-function analytic_hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDTri{T, R}) where {T <: Real, R <: RealOrComplex{T}}
-   @assert is_feas(cone)
+# function analytic_hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDTri{T, R}) where {T <: Real, R <: RealOrComplex{T}}
+#    @assert is_feas(cone)
 
-   @inbounds for i in 1:size(arr, 2)
-       view(prod, :, i) .= ForwardDiff.gradient(
-           s -> ForwardDiff.derivative(t -> barrier(s + t * view(arr, :, i),cone), 0),
-           cone.point,
-       )
-   end
+#    @inbounds for i in 1:size(arr, 2)
+#        view(prod, :, i) .= ForwardDiff.gradient(
+#            s -> ForwardDiff.derivative(t -> barrier(s + t * view(arr, :, i),cone), 0),
+#            cone.point,
+#        )
+#    end
    
-   return prod
-end
+#    return prod
+# end
 
 
 """Work in progress.. arr->array to multiply by hess."""
