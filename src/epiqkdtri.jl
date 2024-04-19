@@ -364,6 +364,8 @@ function hess_prod!(
     z = cone.z
     tempvec = cone.vec
     d2zdρ2 = tempvec
+    Gvec = cone.Gvec
+    Zvec = cone.Zvec
     temp = cone.mat
     Gmat = cone.Gmat
     Zmat = cone.Zmat
@@ -371,10 +373,6 @@ function hess_prod!(
     Zmat2 = cone.Zmat2
     Gmat3 = cone.Gmat3
     Zmat3 = cone.Zmat3
-
-    Gvec = cone.Gvec
-    Zvec = cone.Zvec
-
     # Factorizations of G(ρ), Z(ρ) and ρ
     (Grho_λ, Grho_vecs) = cone.Grho_fact
     (Zrho_λ, Zrho_vecs) = cone.Zrho_fact
@@ -384,7 +382,6 @@ function hess_prod!(
 
     # For each vector ξ do:
     @inbounds for i = 1:size(arr, 2)
-
         # Hhh * a_h + Hhρ * a_ρ
         @views rho_arr = arr[rho_idxs, i]
         prod[1, i] = abs2(zi) * (arr[1, i] + dot(dzdrho, rho_arr))  # ξ[1]/u^2 + ⟨∇_ρ(u),ξ[ρ]⟩/u^2
@@ -400,7 +397,6 @@ function hess_prod!(
             svec_to_smat!(Gmat, Gvev, rt2)
         end # Gmat = G(ξ)
         spectral_outer!(Gmat2, Grho_vecs', Hermitian(Gmat), cone.Gmat3) # (U'_G G(ξ)U_G)
-
         Gmat .= cone.Δ2G .* Gmat2  # Γ(Λ)∘(U'_G G(ξ)U_G)
         spectral_outer!(Gmat2, Grho_vecs, Hermitian(Gmat), cone.Gmat3) # U_G[Γ(Λ_G)∘(U'_G G(ξ)U_G)]U'_G
 

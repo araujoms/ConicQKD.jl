@@ -121,7 +121,6 @@ function hae_bb84_reducedz(qx; T = Float64)
     Z = zkraus(;T)
     V2 = T(1)*[[1,0,0,0] [0,0,0,1]]
     Zhat = [V2'Zi*V for Zi in Z]
-    
 
     side = size(ρ,1)
     vec_dim = Cones.svec_length(R, side)
@@ -165,7 +164,6 @@ function hae_bb84_reducedx(qz; T = Float64)
     Ghat = [I(2)]
     Z = zkraus(;T)
     Zhat = [Zi*V for Zi in Z]
-    
 
     side = size(ρ,1)
     vec_dim = Cones.svec_length(R, side)
@@ -201,7 +199,6 @@ function hae_bb84_reducedxz(; T = Float64)
     Z = zkraus(;T)
     V2 = T(1)*[[1,0,0,0] [0,0,0,1]]
     Zhat = [V2'Zi*V for Zi in Z]
-    Zhat = [reshape(Zi,(length(Zi),1)) for Zi in Zhat]
 
     side = size(ρ,1)
     vec_dim = Cones.svec_length(R, side)
@@ -219,6 +216,5 @@ function hae_bb84_reducedxz(; T = Float64)
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
     optimize!(model)
-    display(value.(ρ))
     return objective_value(model)
 end
