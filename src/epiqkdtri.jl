@@ -80,7 +80,12 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Gvec::Vector{T}
     Zvec::Vector{T}
 
-    function EpiQKDTri{T,R}(Gkraus::Vector, Zkraus::Vector, dim::Int; use_dual::Bool = false) where {T<:Real,R<:RealOrComplex{T}}
+    function EpiQKDTri{T,R}(
+        Gkraus::Vector,
+        Zkraus::Vector,
+        dim::Int;
+        use_dual::Bool = false
+    ) where {T<:Real,R<:RealOrComplex{T}}
         @assert dim > 1
         cone = new{T,R}()
         cone.use_dual_barrier = use_dual
@@ -104,7 +109,13 @@ end
 use_dder3(cone::EpiQKDTri) = false
 
 function reset_data(cone::EpiQKDTri)
-    return (cone.feas_updated = cone.grad_updated = cone.hess_updated = cone.hess_aux_updated = cone.inv_hess_updated = cone.hess_fact_updated = cone.dder3_aux_updated = false)
+    return (
+        cone.feas_updated =
+            cone.grad_updated =
+                cone.hess_updated =
+                    cone.hess_aux_updated =
+                        cone.inv_hess_updated = cone.hess_fact_updated = cone.dder3_aux_updated = false
+    )
 end
 
 function setup_extra_data!(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
@@ -269,8 +280,18 @@ function update_grad(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     return cone.grad
 end
 
-function update_hess(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
+function update_hess_aux(cone::EpiQKDTri)
     @assert cone.grad_updated
+
+    Δ2!(cone.Δ2G, cone.Grho_fact.values, cone.Grho_λ_log)   #Γ(Λ_G)
+    Δ2!(cone.Δ2Z, cone.Zrho_fact.values, cone.Zrho_λ_log)   #Γ(Λ_Z)
+
+    cone.hess_aux_updated = true
+    return cone.hess_aux_updated
+end
+
+function update_hess(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
+    cone.hess_aux_updated || update_hess_aux(cone)
     isdefined(cone, :hess) || alloc_hess!(cone)
     H = cone.hess.data
     rt2 = cone.rt2
@@ -279,7 +300,6 @@ function update_hess(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     d2zdrho2G = cone.d2zdrho2G
     d2zdrho2Z = cone.d2zdrho2Z
     rho_idxs = cone.rho_idxs
-
     (Grho_λ, Grho_vecs) = cone.Grho_fact
     (Zrho_λ, Zrho_vecs) = cone.Zrho_fact
 
@@ -292,9 +312,7 @@ function update_hess(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     symm_kron!(Hrho, cone.rho_inv, rt2)
     mul!(Hrho, dzdrho, dzdrho', abs2(zi), true)
 
-    Δ2!(cone.Δ2G, Grho_λ, cone.Grho_λ_log)
     eig_dot_kron!(d2zdrho2G, cone.Δ2G, Grho_vecs, cone.Gmat, cone.Gmat2, cone.Gmat3, rt2)
-    Δ2!(cone.Δ2Z, Zrho_λ, cone.Zrho_λ_log)
     eig_dot_kron!(d2zdrho2Z, cone.Δ2Z, Zrho_vecs, cone.Zmat, cone.Zmat2, cone.Zmat3, rt2)
 
     if cone.is_G_identity
@@ -329,20 +347,23 @@ end
 #            cone.point,
 #        )
 #    end
-   
+
 #    return prod
 # end
 
-
 """Work in progress.. arr->array to multiply by hess."""
-function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDTri{T, R}) where {T<:Real,R<:RealOrComplex{T}}
-    @assert is_feas(cone)
-    @assert cone.grad_updated
+function hess_prod!(
+    prod::AbstractVecOrMat,
+    arr::AbstractVecOrMat,
+    cone::EpiQKDTri{T,R}
+) where {T<:Real,R<:RealOrComplex{T}}
+    cone.hess_aux_updated || update_hess_aux(cone)
     rt2 = cone.rt2
     rho_idxs = cone.rho_idxs
     dzdrho = cone.dzdrho
     z = cone.z
     tempvec = cone.vec
+    d2zdρ2 = tempvec
     temp = cone.mat
     Gmat = cone.Gmat
     Zmat = cone.Zmat
@@ -351,52 +372,66 @@ function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDT
     Gmat3 = cone.Gmat3
     Zmat3 = cone.Zmat3
 
-    # Factorize G(ρ), Z(ρ) and ρ
+    Gvec = cone.Gvec
+    Zvec = cone.Zvec
+
+    # Factorizations of G(ρ), Z(ρ) and ρ
     (Grho_λ, Grho_vecs) = cone.Grho_fact
     (Zrho_λ, Zrho_vecs) = cone.Zrho_fact
     (rho_λ, rho_vecs) = cone.rho_fact
 
+    zi = inv(cone.z)
+
     # For each vector ξ do:
-    @inbounds for i in 1:size(arr, 2)
+    @inbounds for i = 1:size(arr, 2)
 
         # Hhh * a_h + Hhρ * a_ρ
         @views rho_arr = arr[rho_idxs, i]
-        prod[1, i] = (arr[1, i] + dot(dzdrho, rho_arr)) / z^2  # ξ[1]/u^2 + ⟨∇_ρ(u),ξ[ρ]⟩/u^2
+        prod[1, i] = abs2(zi) * (arr[1, i] + dot(dzdrho, rho_arr))  # ξ[1]/u^2 + ⟨∇_ρ(u),ξ[ρ]⟩/u^2
 
         # Hhρ * a_h + Hρρ * a_ρ
         @views @. prod[rho_idxs, i] = prod[1, i] * dzdrho
 
         # Code corresponding to G
-        cone.is_G_identity ? Gmat = smat(rho_arr, R) : Gmat = smat(cone.G * rho_arr, R)  # Garr = G(ξ)
-        spectral_outer!(Gmat2, Grho_vecs', Hermitian(Gmat, :U), cone.Gmat3) # (U'_G G(ξ)U_G)
-        Δ2!(cone.Δ2G, Grho_λ, cone.Grho_λ_log)  # Γ(Λ_G)
-        @. Gmat = cone.Δ2G .* Gmat2  # Γ(Λ)∘(U'_G G(ξ)U_G)
-        spectral_outer!(Gmat2, Grho_vecs, Hermitian(Gmat, :U), cone.Gmat3) # U_G[Γ(Λ_G)∘(U'_G G(ξ)U_G)]U'_G
-        d2zdρ2 = svec(Gmat2)
-        if !cone.is_G_identity
-            mul!(d2zdρ2, cone.Gadj, d2zdρ2) # G'{U_G[Γ(Λ)∘(U'_G G(ξ)U_G)]U'_G}
+        if cone.is_G_identity
+            svec_to_smat!(Gmat, rho_arr, rt2)
+        else
+            mul!(Gvec, cone.G, rho_arr)
+            svec_to_smat!(Gmat, Gvev, rt2)
+        end # Gmat = G(ξ)
+        spectral_outer!(Gmat2, Grho_vecs', Hermitian(Gmat), cone.Gmat3) # (U'_G G(ξ)U_G)
+
+        Gmat .= cone.Δ2G .* Gmat2  # Γ(Λ)∘(U'_G G(ξ)U_G)
+        spectral_outer!(Gmat2, Grho_vecs, Hermitian(Gmat), cone.Gmat3) # U_G[Γ(Λ_G)∘(U'_G G(ξ)U_G)]U'_G
+
+        smat_to_svec!(Gvec, Gmat2, rt2)
+        if cone.is_G_identity
+            d2zdρ2 .= Gvec
+        else
+            mul!(d2zdρ2, cone.Gadj, Gvec) # G'{U_G[Γ(Λ)∘(U'_G G(ξ)U_G)]U'_G}
         end
 
         # Code corresponding to Z
-        Zmat = smat(cone.Z * rho_arr, R)  # Zarr = Z(ξ)
-        spectral_outer!(Zmat2, Zrho_vecs', Hermitian(Zmat, :U), Zmat3) # (U'_Z Z(ξ)U_Z)
-        Δ2!(cone.Δ2Z, Zrho_λ, cone.Zrho_λ_log)  # Γ(Λ_Z)
-        @. Zmat = cone.Δ2Z * Zmat2  # Γ(Λ)∘(U'_Z Z(ξ)U_Z)
-        spectral_outer!(Zmat2, Zrho_vecs, Hermitian(Zmat, :U), Zmat3)  # U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z
-        cone.Zvec = svec(Zmat2)
-        mul!(d2zdρ2, cone.Zadj, cone.Zvec, 1, -1)  # Z'{U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z} - G'{U_G[Γ(Λ)∘(U'_G G(ξ)U_G)]U'_G}
-        
-        @views prod[rho_idxs, i] -= d2zdρ2 / z
+        mul!(Zvec, cone.Z, rho_arr)
+        svec_to_smat!(Zmat, Zvec, rt2)  # Zmat = Z(ξ)
+        spectral_outer!(Zmat2, Zrho_vecs', Hermitian(Zmat), Zmat3) # (U'_Z Z(ξ)U_Z)
+
+        Zmat .= cone.Δ2Z .* Zmat2  # Γ(Λ)∘(U'_Z Z(ξ)U_Z)
+        spectral_outer!(Zmat2, Zrho_vecs, Hermitian(Zmat), Zmat3)  # U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z
+        smat_to_svec!(Zvec, Zmat2, rt2)
+        mul!(d2zdρ2, cone.Zadj, Zvec, 1, -1)  # Z'{U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z} - G'{U_G[Γ(Λ)∘(U'_G G(ξ)U_G)]U'_G}
+
+        @views prod[rho_idxs, i] -= zi * d2zdρ2
 
         # Hessian of log(det(ρ))
         svec_to_smat!(cone.mat, rho_arr, rt2)  # svec(ξ) -> smat(ξ)
-        spectral_outer!(temp, rho_vecs', Hermitian(cone.mat, :U), cone.mat2)  # U' ξ U
+        spectral_outer!(temp, rho_vecs', Hermitian(cone.mat), cone.mat2)  # U' ξ U
         ldiv!(Diagonal(rho_λ), temp)  # Λ^-1 U' ξ U
         rdiv!(temp, Diagonal(rho_λ))  # Λ^-1 U' ξ U Λ^-1
-        spectral_outer!(temp, rho_vecs, Hermitian(temp, :U), cone.mat2)  # U Λ^-1 U' ξ U Λ^-1 U'
+        spectral_outer!(temp, rho_vecs, Hermitian(temp), cone.mat2)  # U Λ^-1 U' ξ U Λ^-1 U'
         @views prod[rho_idxs, i] += smat_to_svec!(tempvec, temp, rt2)
     end
-   
+
     return prod
 end
 
@@ -414,7 +449,7 @@ function skron(X)
     R = eltype(X)
     T = real(R)
     iscomplex = R <: Complex
-    dout, din = size.(Ref(X),(1,2))
+    dout, din = size.(Ref(X), (1, 2))
     sdout, sdin = Cones.svec_length.(Ref(R), (dout, din))
     result = Matrix{T}(undef, sdout, sdin)
     symm_kron_full!(result, X, sqrt(T(2)))
@@ -442,7 +477,7 @@ end
 Computes `skr` such that `skr*svec(x) = svec(mat*x*mat')` for real `mat`
 """
 function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{T}, rt2::T) where {T<:Real}
-    dout, din = size.(Ref(mat),(1,2))
+    dout, din = size.(Ref(mat), (1, 2))
 
     col_idx = 1
     @inbounds for l = 1:din
@@ -478,7 +513,7 @@ end
 Computes `skr` such that `skr*svec(x) = svec(mat*x*mat')` for complex `mat`
 """
 function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{Complex{T}}, rt2::T) where {T<:Real}
-    dout, din = size.(Ref(mat),(1,2))
+    dout, din = size.(Ref(mat), (1, 2))
 
     col_idx = 1
     @inbounds for l = 1:din
