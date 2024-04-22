@@ -1,5 +1,3 @@
-import ForwardDiff
-
 """
 $(TYPEDEF)
 
@@ -98,8 +96,8 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         cone.d = svec_side(R, cone.rho_dim)
         cone.Gd = size(Gkraus[1], 1)
         cone.Zd = size(Zkraus[1], 1)
-        cone.G = kraus2matrix(Gkraus, T, R)
-        cone.Z = kraus2matrix(Zkraus, T, R)
+        cone.G = kraus2matrix(Gkraus, R)
+        cone.Z = kraus2matrix(Zkraus, R)
         cone.Gadj = Matrix(cone.G')
         cone.Zadj = Matrix(cone.Z')
         cone.is_G_identity = cone.G == I(cone.rho_dim)
@@ -233,12 +231,16 @@ function update_feas(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
 
     if isposdef(rhoH)
         cone.Grho_fact = eigen(Hermitian(cone.Grho))
-        @. cone.Grho_λ_log = log(cone.Grho_fact.values)
         cone.Zrho_fact = eigen(Hermitian(cone.Zrho))
-        @. cone.Zrho_λ_log = log(cone.Zrho_fact.values)
-        relative_entropy = dot(cone.Grho_fact.values, cone.Grho_λ_log) - dot(cone.Zrho_fact.values, cone.Zrho_λ_log)
-        cone.z = point[1] - relative_entropy
-        cone.is_feas = (cone.z > 0)
+        if isposdef(cone.Grho_fact) && isposdef(cone.Zrho_fact) #necessary because of numerical error
+            Grho_λ = cone.Grho_fact.values
+            Zrho_λ = cone.Zrho_fact.values
+            @. cone.Grho_λ_log = log(Grho_λ)
+            @. cone.Zrho_λ_log = log(Zrho_λ)
+            relative_entropy = dot(Grho_λ, cone.Grho_λ_log) - dot(Zrho_λ, cone.Zrho_λ_log)
+            cone.z = point[1] - relative_entropy
+            cone.is_feas = (cone.z > 0)
+        end
     end
 
     cone.feas_updated = true
@@ -559,7 +561,7 @@ Converts a vector of Kraus operators `K` into a matrix M such that
 svec(sum(K[i]*X*K[i]')) == M*svec(X)
 for Hermitian matrices X
 """
-function kraus2matrix(K::Vector, T::Type, R::Type)
+function kraus2matrix(K::Vector, R::Type)
     K = [R.(Ki) for Ki in K]
     return sum(skron.(K))
 end
