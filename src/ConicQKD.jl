@@ -10,10 +10,10 @@ using Hypatia.Cones
 import Hypatia.Cones.Cone
 
 #these functions are imported in order to extend them
-import Hypatia.Cones: reset_data, setup_extra_data!, get_nu, set_initial_point!, update_feas, update_grad, update_hess_aux, update_hess, hess_prod!, use_dder3
+import Hypatia.Cones: reset_data, setup_extra_data!, get_nu, set_initial_point!, update_feas, update_grad, update_hess_aux, update_hess, hess_prod!, use_dder3, update_dder3_aux, dder3
 
 #these are just to be used
-import Hypatia.Cones: svec_side, svec_to_smat!, smat_to_svec!, spectral_outer!, Δ2!, eig_dot_kron!, alloc_hess!, symm_kron!, is_feas
+import Hypatia.Cones: svec_side, svec_to_smat!, smat_to_svec!, spectral_outer!, Δ2!, Δ3!, eig_dot_kron!, alloc_hess!, symm_kron!, is_feas
 
 using DocStringExtensions
 
