@@ -541,15 +541,17 @@ function dder3(
     dzdrho_prod_dir = dot(cone.dzdrho, rho_dir)
     ddu = d2zdrho2(rho_dir, cone)
 
-    dder3[1] = -2 * zi^3 * (abs2(u_dir) + u_dir * dzdrho_prod_dir + dzdrho_prod_dir^2)
-    dder3[1] += dot(ddu,rho_dir) * zi^2
+    const0 = dzdrho_prod_dir^2 * cone.dzdrho
+
+    dder3[1] = - zi * (u_dir^2 + u_dir * dzdrho_prod_dir + dzdrho_prod_dir^2)
+    dder3[1] = (dder3[1] + 0.5 * dot(ddu,rho_dir)) * zi^2
     
     @views dder3_rho = dder3[cone.rho_idxs]
-    dder3_rho = -2 * zi^3 * dzdrho_prod_dir^2 * cone.dzdrho
-    dder3_rho += zi^2 * dot(ddu,rho_dir) * cone.dzdrho
-    dder3_rho += 2 * zi^2 * dzdrho_prod_dir * ddu
-    dder3_rho -= zi * d3zdrho3(rho_dir, cone)
-
+    dder3_rho = (- zi * dzdrho_prod_dir^2 +  0.5 * dot(ddu,rho_dir)) * zi * cone.dzdrho
+    dder3_rho += zi * dzdrho_prod_dir * ddu
+    dder3_rho -= 0.5 * d3zdrho3(rho_dir, cone)
+    dder3_rho *= zi
+    
     # Third derivative of log(det(ρ)) wrt ρ
     svec_to_smat!(cone.mat, rho_dir, rt2)  # svec(ξ) -> smat(ξ)
     spectral_outer!(cone.mat, rho_vecs', Hermitian(cone.mat), cone.mat2)  # U' ξ U
@@ -559,9 +561,9 @@ function dder3(
     mul!(cone.mat2, cone.mat, cone.mat3)  # Λ^-1 U' ξ U Λ^-1 U' ξ U
     rdiv!(cone.mat2, Diagonal(rho_λ))  # Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1
     spectral_outer!(cone.mat3, rho_vecs, Hermitian(cone.mat2), cone.mat)  # U Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1 U'
-    dder3_rho -= 2 * smat_to_svec!(cone.vec, cone.mat3, rt2)
+    dder3_rho -= smat_to_svec!(cone.vec, cone.mat3, rt2)
 
-    return - 0.5 * dder3
+    return - dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
 end
 
 """
