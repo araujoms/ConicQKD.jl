@@ -377,7 +377,7 @@ function d2zdrho2(rho_dir::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Rea
         svec_to_smat!(Gmat, rho_dir, rt2)
     else
         mul!(Gvec, cone.G, rho_dir)
-        svec_to_smat!(Gmat, Gvev, rt2)
+        svec_to_smat!(Gmat, Gvec, rt2)
     end # Gmat = G(ξ)
     spectral_outer!(Gmat2, Grho_vecs', Hermitian(Gmat), cone.Gmat3) # (U'_G G(ξ)U_G)
     Gmat .= cone.Δ2G .* Gmat2  # Γ(Λ)∘(U'_G G(ξ)U_G)
@@ -476,7 +476,7 @@ function d3zdrho3(rho_dir::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Rea
         svec_to_smat!(Gmat, rho_dir, rt2)
     else
         mul!(Gvec, cone.G, rho_dir)
-        svec_to_smat!(Gmat, Gvev, rt2)
+        svec_to_smat!(Gmat, Gvec, rt2)
     end # Gmat = G(ξ)
     spectral_outer!(Gmat2, Grho_vecs', Hermitian(Gmat), cone.Gmat3) # (U'_G G(ξ)U_G)
 
