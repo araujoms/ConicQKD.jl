@@ -549,7 +549,7 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     dder3[1] += - 2 * zi^3 * dot(cone.dzdrho, rho_dir)^2 + zi^2 * dot(ddu, rho_dir)  # ∇hρρ * (ξ[ρ],ξ[ρ])
 
     # ∇ρhh * (ξ[h],ξ[h])
-    dder3[cone.rho_idxs] += -2 * zi^3 * cone.dzdrho
+    dder3[cone.rho_idxs] = -2 * zi^3 * cone.dzdrho
 
     # ∇ρhρ + # ∇ρρh * (ξ[h],ξ[ρ])
     dder3[cone.rho_idxs] += 2 * (- 2 * zi^3 * dot(cone.dzdrho, rho_dir) * cone.dzdrho * dir[1] + zi^2 * ddu * dir[1])
