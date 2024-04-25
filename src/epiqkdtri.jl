@@ -558,7 +558,7 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     dder3[cone.rho_idxs] += - 2 * zi^3 * dot(cone.dzdrho, rho_dir)^2 * cone.dzdrho
     dder3[cone.rho_idxs] += zi^2 * dot(ddu, rho_dir) * cone.dzdrho
     dder3[cone.rho_idxs] += zi^2 * dot(cone.dzdrho, rho_dir) * ddu
-    dder3[cone.rho_idxs] = - zi * d3zdrho3(rho_dir, cone)
+    dder3[cone.rho_idxs] += - zi * d3zdrho3(rho_dir, cone)
 
     # Third derivative of log(det(ρ)) wrt ρ
     svec_to_smat!(cone.mat, rho_dir, rt2)  # svec(ξ) -> smat(ξ)
@@ -569,7 +569,7 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     mul!(cone.mat2, cone.mat, cone.mat3)  # Λ^-1 U' ξ U Λ^-1 U' ξ U
     rdiv!(cone.mat2, Diagonal(rho_λ))  # Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1
     spectral_outer!(cone.mat3, rho_vecs, Hermitian(cone.mat2), cone.mat)  # U Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1 U'
-    dder3[cone.rho_idxs] -= smat_to_svec!(cone.vec, cone.mat3, rt2)
+    dder3[cone.rho_idxs] -= 2 * smat_to_svec!(cone.vec, cone.mat3, rt2)
 
     return - 0.5 * dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
 end
