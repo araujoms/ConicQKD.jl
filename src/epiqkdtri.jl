@@ -527,20 +527,41 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     (rho_λ, rho_vecs) = cone.rho_fact
 
     u_dir = dir[1]
-    @views rho_arr = dir[cone.rho_idxs]
-    dzdrho_prod_dir = dot(cone.dzdrho, rho_arr)
-    ddu = d2zdrho2(rho_arr, cone)
+    @views rho_dir = dir[cone.rho_idxs]
+    dzdrho_prod_dir = dot(cone.dzdrho, rho_dir)
+    # * # ddu = d2zdrho2(rho_dir, cone)
 
-    dder3[1] = -zi * (u_dir^2 + u_dir * dzdrho_prod_dir + dzdrho_prod_dir^2)
-    dder3[1] = (dder3[1] + 0.5 * dot(ddu, rho_arr)) * zi^2
+    # dder3[1] = -zi * (u_dir^2 + 2 * u_dir * dzdrho_prod_dir + dzdrho_prod_dir^2)
+    # dder3[1] = (dder3[1] + 0.5 * dot(ddu, rho_dir)) * zi^2
 
-    dder3[cone.rho_idxs] = (-zi * dzdrho_prod_dir^2 + 0.5 * dot(ddu, rho_arr)) * zi * cone.dzdrho
-    dder3[cone.rho_idxs] += zi * dzdrho_prod_dir * ddu
-    dder3[cone.rho_idxs] -= 0.5 * d3zdrho3(rho_arr, cone)
-    dder3[cone.rho_idxs] *= zi
+    # dder3[cone.rho_idxs] = (-zi * dzdrho_prod_dir^2 + 0.5 * dot(ddu, rho_dir)) * zi * cone.dzdrho
+    # dder3[cone.rho_idxs] += zi * dzdrho_prod_dir * ddu
+    # dder3[cone.rho_idxs] -= 0.5 * d3zdrho3(rho_dir, cone)
+    # dder3[cone.rho_idxs] *= zi
+    # dder3[cone.rho_idxs] -= 2 * zi^3 * dzdrho_prod_dir * u_dir * cone.dzdrho
+    # dder3[cone.rho_idxs] += zi^2 * ddu * u_dir
+    # dder3[cone.rho_idxs] -= cone.dzdrho * zi^3 * u_dir^2
+
+    ddu = d2zdrho2(rho_dir, cone)
+
+    dder3[1] = - 2 * zi^3 * dir[1]^2  # ∇hhh * (ξ[h],ξ[h])
+    dder3[1] += 2 * (- 2 * zi^3 * dir[1] * dot(cone.dzdrho, rho_dir))  # ∇hhρ + # ∇hρh * (ξ[h],ξ[ρ])
+    dder3[1] += - 2 * zi^3 * dot(cone.dzdrho, rho_dir)^2 + zi^2 * dot(ddu, rho_dir)  # ∇hρρ * (ξ[ρ],ξ[ρ])
+
+    # ∇ρhh * (ξ[h],ξ[h])
+    dder3[cone.rho_idxs] += -2 * zi^3 * cone.dzdrho
+
+    # ∇ρhρ + # ∇ρρh * (ξ[h],ξ[ρ])
+    dder3[cone.rho_idxs] += 2 * (- 2 * zi^3 * dot(cone.dzdrho, rho_dir) * cone.dzdrho * dir[1] + zi^2 * ddu * dir[1])
+
+    # ∇ρρρ * (ξ[ρ],ξ[ρ])
+    dder3[cone.rho_idxs] += - 2 * zi^3 * dot(cone.dzdrho, rho_dir)^2 * cone.dzdrho
+    dder3[cone.rho_idxs] += zi^2 * dot(ddu, rho_dir) * cone.dzdrho
+    dder3[cone.rho_idxs] += zi^2 * dot(cone.dzdrho, rho_dir) * ddu
+    dder3[cone.rho_idxs] = - zi * d3zdrho3(rho_dir, cone)
 
     # Third derivative of log(det(ρ)) wrt ρ
-    svec_to_smat!(cone.mat, rho_arr, rt2)  # svec(ξ) -> smat(ξ)
+    svec_to_smat!(cone.mat, rho_dir, rt2)  # svec(ξ) -> smat(ξ)
     spectral_outer!(cone.mat, rho_vecs', Hermitian(cone.mat), cone.mat2)  # U' ξ U
     cone.mat3 .= cone.mat
     ldiv!(Diagonal(rho_λ), cone.mat)  # Λ^-1 U' ξ U
@@ -550,7 +571,7 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     spectral_outer!(cone.mat3, rho_vecs, Hermitian(cone.mat2), cone.mat)  # U Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1 U'
     dder3[cone.rho_idxs] -= smat_to_svec!(cone.vec, cone.mat3, rt2)
 
-    return -dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
+    return - 0.5 * dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
 end
 
 """
