@@ -413,8 +413,7 @@ function hess_prod!(
     rt2 = cone.rt2
     rho_idxs = cone.rho_idxs
     dzdrho = cone.dzdrho
-    tempvec = cone.vec
-    d2zdρ2 = tempvec
+    d2zdρ2 = cone.vec
 
     (rho_λ, rho_vecs) = cone.rho_fact
 
@@ -458,13 +457,13 @@ end
 
 function d3zdrho3(rho_arr::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     rt2 = cone.rt2
-    tempvec = cone.vec
-    d3zdρ3 = tempvec
+    d3zdρ3 = cone.vec
     Gvec = cone.Gvec
     Zvec = cone.Zvec
     Gmat = cone.Gmat
-    Zmat = cone.Zmat
     Gmat2 = cone.Gmat2
+    Gmat3 = cone.Gmat3
+    Zmat = cone.Zmat
     Zmat2 = cone.Zmat2
     Zmat3 = cone.Zmat3
     # Factorizations of G(ρ), Z(ρ) and ρ
@@ -478,18 +477,18 @@ function d3zdrho3(rho_arr::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Rea
         mul!(Gvec, cone.G, rho_arr)
         svec_to_smat!(Gmat, Gvec, rt2)
     end # Gmat = G(ξ)
-    spectral_outer!(Gmat2, Grho_vecs', Hermitian(Gmat), cone.Gmat3) # (U'_G G(ξ)U_G)
+    Gvec_sim = spectral_outer!(Gmat2, Grho_vecs', Hermitian(Gmat), Gmat3) # (U'_G G(ξ)U_G)
 
-    @inbounds @views for j = 1:(cone.d)
-        Gvec_sim_j = Gmat2[:, j]
+    @views Gtempvec = cone.Gmat3[:,1]
+    @inbounds @views for j = 1:(cone.Gd)
         for i = 1:j
-            Gvec_sim_i = Gmat2[:, i]
-            Gmat[i, j] = dot(Gvec_sim_i, Diagonal(cone.Δ3G[i, j, :]), Gvec_sim_j)
+            Gtempvec .= cone.Δ3G[i, j, :] .* Gvec_sim[:,j]
+            Gmat[i, j] = 2*dot(Gvec_sim[:,i], Gtempvec)
         end
     end
-    Gmat *= 2 # M_G(ξ) = 2 ∑_k ξ_ik ξ_jk Γ_ijk(Λ_G)
+    # M_G(ξ) = 2 ∑_k ξ_ik ξ_jk Γ_ijk(Λ_G)
 
-    spectral_outer!(Gmat2, Grho_vecs, Hermitian(Gmat), cone.Gmat3) # U_G[M_G(ξ)]U'_G
+    spectral_outer!(Gmat2, Grho_vecs, Hermitian(Gmat), Gmat3) # U_G[M_G(ξ)]U'_G
 
     smat_to_svec!(Gvec, Gmat2, rt2)
     if cone.is_G_identity
@@ -501,16 +500,16 @@ function d3zdrho3(rho_arr::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Rea
     # Code corresponding to Z
     mul!(Zvec, cone.Z, rho_arr)
     svec_to_smat!(Zmat, Zvec, rt2)  # Zmat = Z(ξ)
-    spectral_outer!(Zmat2, Zrho_vecs', Hermitian(Zmat), Zmat3) # (U'_Z Z(ξ)U_Z)
+    Zvec_sim = spectral_outer!(Zmat2, Zrho_vecs', Hermitian(Zmat), Zmat3) # (U'_Z Z(ξ)U_Z)
 
-    @inbounds @views for j = 1:(cone.d)
-        Zvec_sim_j = Zmat2[:, j]
+    @views Ztempvec = cone.Zmat3[:,1]
+    @inbounds @views for j = 1:(cone.Zd)
         for i = 1:j
-            Zvec_sim_i = Zmat2[:, i]
-            Zmat[i, j] = dot(Zvec_sim_i, Diagonal(cone.Δ3Z[i, j, :]), Zvec_sim_j)
+            Ztempvec .= cone.Δ3Z[i, j, :] .* Zvec_sim[:,j]
+            Zmat[i, j] = 2*dot(Zvec_sim[:,i], Ztempvec)
         end
     end
-    Zmat *= 2 # M_Z(ξ) = 2 ∑_k ξ_ik ξ_jk Γ_ijk(Λ_Z)
+    # M_Z(ξ) = 2 ∑_k ξ_ik ξ_jk Γ_ijk(Λ_Z)
 
     spectral_outer!(Zmat2, Zrho_vecs, Hermitian(Zmat), Zmat3)  # U_Z[M_Z(ξ)]U'_Z
     smat_to_svec!(Zvec, Zmat2, rt2)

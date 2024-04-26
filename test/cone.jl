@@ -357,6 +357,7 @@ function proj(i::Integer, d::Integer; T::Type = Float64, R::Type = Complex{T})
 end
 
 function random_unitary(d::Integer; T::Type = Float64, R::Type = Complex{T})
+    Random.seed!(1)
     z = randn(R, (d, d))
     fact = qr(z)
     Λ = sign.(real(Diagonal(fact.R)))
