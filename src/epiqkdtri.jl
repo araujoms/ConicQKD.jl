@@ -525,26 +525,11 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     zi = inv(cone.z)
     (rho_λ, rho_vecs) = cone.rho_fact
 
-    u_dir = dir[1]
     @views rho_dir = dir[cone.rho_idxs]
-    dzdrho_prod_dir = dot(cone.dzdrho, rho_dir)
-    # * # ddu = d2zdrho2(rho_dir, cone)
-
-    # dder3[1] = -zi * (u_dir^2 + 2 * u_dir * dzdrho_prod_dir + dzdrho_prod_dir^2)
-    # dder3[1] = (dder3[1] + 0.5 * dot(ddu, rho_dir)) * zi^2
-
-    # dder3[cone.rho_idxs] = (-zi * dzdrho_prod_dir^2 + 0.5 * dot(ddu, rho_dir)) * zi * cone.dzdrho
-    # dder3[cone.rho_idxs] += zi * dzdrho_prod_dir * ddu
-    # dder3[cone.rho_idxs] -= 0.5 * d3zdrho3(rho_dir, cone)
-    # dder3[cone.rho_idxs] *= zi
-    # dder3[cone.rho_idxs] -= 2 * zi^3 * dzdrho_prod_dir * u_dir * cone.dzdrho
-    # dder3[cone.rho_idxs] += zi^2 * ddu * u_dir
-    # dder3[cone.rho_idxs] -= cone.dzdrho * zi^3 * u_dir^2
 
     ddu = d2zdrho2(rho_dir, cone) # ∇ρρ(u) * (:, ξ[ρ])
 
-
-    # #  LEA'S CODE (for the ρ part: doesn't pass the test and doesn't agree with my code)
+    # # *  LEA'S dder3 (ρ part: doesn't pass the test and doesn't agree with my code)
 
     # const0 = zi * (dir[1] + dot(rho_dir, cone.dzdrho))  # ξ[1] * zi + ∇ρz⋅ξ[ρ]
     # const1 =
@@ -573,7 +558,7 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     # return dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
 
 
-    #  PABLOS'S CODE (for the ρ part: doesn't pass the test and doesn't agree with Lea's code)
+    # # * PABLOS'S dder3 (ρ part: doesn't pass the test and doesn't agree with Lea's code)
 
     # @views dder3[1] = - 2 * zi^3 * dir[1]^2  # ∇hhh * (ξ[h],ξ[h])
     # @views dder3[1] += 2 * (- 2 * zi^3 * dir[1] * dot(cone.dzdrho, rho_dir))  # ∇hhρ + ∇hρh * (ξ[h],ξ[ρ])
@@ -600,7 +585,6 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     @views dder3[cone.rho_idxs] += - zi * d3zdrho3(rho_dir, cone)
 
     # ! Code not working in this region ↑↑↑
-
 
     # # * Lea's Third derivative of log(det(ρ)) wrt ρ
     svec_to_smat!(cone.mat2, rho_dir, rt2)  # svec(ξ) -> smat(ξ)
