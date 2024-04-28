@@ -544,7 +544,7 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     ddu = d2zdrho2(rho_dir, cone) # ∇ρρ(u) * (:, ξ[ρ])
 
 
-    # #  LEA'S CODE
+    # #  LEA'S CODE (for the ρ part: doesn't pass the test and doesn't agree with my code)
 
     # const0 = zi * (dir[1] + dot(rho_dir, cone.dzdrho))  # ξ[1] * zi + ∇ρz⋅ξ[ρ]
     # const1 =
@@ -573,11 +573,19 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     # return dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
 
 
-    #  PABLOS'S CODE
+    #  PABLOS'S CODE (for the ρ part: doesn't pass the test and doesn't agree with Lea's code)
 
-    @views dder3[1] = - 2 * zi^3 * dir[1]^2  # ∇hhh * (ξ[h],ξ[h])
-    @views dder3[1] += 2 * (- 2 * zi^3 * dir[1] * dot(cone.dzdrho, rho_dir))  # ∇hhρ + # ∇hρh * (ξ[h],ξ[ρ])
-    @views dder3[1] += - 2 * zi^3 * dot(cone.dzdrho, rho_dir)^2 + zi^2 * dot(ddu, rho_dir)  # ∇hρρ * (ξ[ρ],ξ[ρ])
+    # @views dder3[1] = - 2 * zi^3 * dir[1]^2  # ∇hhh * (ξ[h],ξ[h])
+    # @views dder3[1] += 2 * (- 2 * zi^3 * dir[1] * dot(cone.dzdrho, rho_dir))  # ∇hhρ + ∇hρh * (ξ[h],ξ[ρ])
+    # @views dder3[1] += - 2 * zi^3 * dot(cone.dzdrho, rho_dir)^2 + zi^2 * dot(ddu, rho_dir)  # ∇hρρ * (ξ[ρ],ξ[ρ])
+
+    # ∇hhh * (ξ[h],ξ[h]) + (∇hhρ + ∇hρh) * (ξ[h],ξ[ρ]) + ∇hρρ * (ξ[ρ],ξ[ρ]) using Lea's code
+    const0 = zi * (dir[1] + dot(rho_dir, cone.dzdrho))  # ξ[1] * zi + ∇ρz⋅ξ[ρ]
+    const1 = abs2(const0) + zi * dot(rho_dir, ddu) / 2
+    # const1 = zi^2 * ξ[1]^2 + dot(∇ρz⋅ξ[ρ])^2 * zi^2 + 2 zi^2 * ξ[1] * ∇ρz⋅ξ[ρ] + zi * ∇2ρρ(z)⋅ξ[ρ]/2
+    @views dder3[1] = -2 * zi * const1
+
+    # ! Code not working in this region ↓↓↓
 
     # ∇ρhh * (ξ[h],ξ[h])
     @views dder3[cone.rho_idxs] = -2 * zi^3 * cone.dzdrho * dir[1]^2
@@ -591,82 +599,31 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     @views dder3[cone.rho_idxs] += zi^2 * dot(cone.dzdrho, rho_dir) * ddu
     @views dder3[cone.rho_idxs] += - zi * d3zdrho3(rho_dir, cone)
 
-    # Third derivative of log(det(ρ)) wrt ρ
-    svec_to_smat!(cone.mat, rho_dir, rt2)  # svec(ξ) -> smat(ξ)
-    spectral_outer!(cone.mat, rho_vecs', Hermitian(cone.mat), cone.mat2)  # U' ξ U
-    cone.mat3 .= cone.mat
-    ldiv!(Diagonal(rho_λ), cone.mat)  # Λ^-1 U' ξ U
-    rdiv!(cone.mat, Diagonal(rho_λ))  # Λ^-1 U' ξ U Λ^-1
-    mul!(cone.mat2, cone.mat, cone.mat3)  # Λ^-1 U' ξ U Λ^-1 U' ξ U
-    rdiv!(cone.mat2, Diagonal(rho_λ))  # Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1
-    spectral_outer!(cone.mat3, rho_vecs, Hermitian(cone.mat2), cone.mat)  # U Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1 U'
-    @views dder3[cone.rho_idxs] -= 2 * smat_to_svec!(cone.vec, cone.mat3, rt2)
+    # ! Code not working in this region ↑↑↑
+
+
+    # # * Lea's Third derivative of log(det(ρ)) wrt ρ
+    svec_to_smat!(cone.mat2, rho_dir, rt2)  # svec(ξ) -> smat(ξ)
+    spectral_outer!(cone.mat, rho_vecs', Hermitian(cone.mat2), cone.mat3)  # U' ξ U
+    @. cone.mat /= sqrt(rho_λ)'  #  U' ξ U sqrt(Λ-1)
+    ldiv!(Diagonal(rho_λ), cone.mat) # Λ-1 U' ξ U sqrt(Λ-1)
+    mul!(cone.mat2, cone.mat, cone.mat')  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1
+    spectral_outer!(cone.mat, rho_vecs, Hermitian(cone.mat2), cone.mat3)  # U Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1 U'
+    @views dder3[cone.rho_idxs] += - 2 * smat_to_svec!(cone.vec, cone.mat, rt2)
+
+    # # * Pablo's Third derivative of log(det(ρ)) wrt ρ (same result)
+    # svec_to_smat!(cone.mat2, rho_dir, rt2)  # svec(ξ) -> smat(ξ)
+    # spectral_outer!(cone.mat, rho_vecs', Hermitian(cone.mat2), cone.mat3)  # U' ξ U
+    # cone.mat3 .= cone.mat
+    # ldiv!(Diagonal(rho_λ), cone.mat)  # Λ^-1 U' ξ U
+    # rdiv!(cone.mat, Diagonal(rho_λ))  # Λ^-1 U' ξ U Λ^-1
+    # mul!(cone.mat2, cone.mat, cone.mat3)  # Λ^-1 U' ξ U Λ^-1 U' ξ U
+    # rdiv!(cone.mat2, Diagonal(rho_λ))  # Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1
+    # spectral_outer!(cone.mat, rho_vecs, Hermitian(cone.mat2), cone.mat3)  # U Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1 U'
+    # @views dder3[cone.rho_idxs] += -2 * smat_to_svec!(cone.vec, cone.mat, rt2)
 
     return - 0.5 * dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
 end
-
-
-function __dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:RealOrComplex{T}}
-    cone.dder3_aux_updated || update_dder3_aux(cone)
-    rt2 = cone.rt2
-    W_idxs = cone.W_idxs
-    zi = inv(cone.z)
-    (W_λ, W_vecs) = cone.W_fact
-    Δ3_W = cone.Δ3_W
-    dzdW = cone.dzdrho
-    mat = cone.mat
-    mat2 = cone.mat2
-    dder3 = cone.dder3
-
-    u_dir = dir[1]
-    @views w_dir = dir[W_idxs]
-
-    # v, w
-    # TODO prealloc
-    rho_dir = Hermitian(zero(mat), :U)
-    W_dir_sim = zero(mat)
-    W_part_1 = zero(mat)
-    diff_dot_W_WW = zero(mat)
-
-    svec_to_smat!(W_dir.data, w_dir, rt2)  # svec(ξ) -> smat(ξ)
-    spectral_outer!(W_dir_sim, W_vecs', W_dir, mat) # U' ξ U
-
-    @. mat = W_dir_sim * cone.Δ2_W  # Γ(Λ)∘(U' ξ U)
-    spectral_outer!(mat, W_vecs, Hermitian(mat, :U), mat2)  # U (Γ(Λ)∘(U' ξ U) )U'
-    Wwd = d2zdrho2(rho_dir, cone)  # U (Γ(Λ)∘(U' ξ U) )U' == d2zdρ2
-
-    const0 = zi * u_dir + dot(w_dir, dzdW)
-    const1 =
-        abs2(const0) + zi * dot(w_dir, Wwd) / 2  # zi^2 * dir[1]^2 + dot(dir[ρ], dzdρ)^2 + 2 zi * dir[1] * dot(dir[ρ], dzdρ) + zi * dot(d2zdρ2, dir[ρ])/2
-
-    # u
-    dder3[1] = zi * const1
-
-    @inbounds @views for j in 1:(cone.d)
-        Wds_j = W_dir_sim[:, j]
-        for i in 1:j
-            Wds_i = W_dir_sim[:, i]
-            DΔ3_W_ij = Diagonal(Δ3_W[:, i, j])
-            diff_dot_W_WW[i, j] = dot(Wds_i, DΔ3_W_ij, Wds_j)  # M_G(ξ)
-        end
-    end
-
-    # w
-    svec_to_smat!(W_part_1, Wwd, rt2)   # U (Γ(Λ)∘(U' ξ U) )U' == d2zdρ2
-    W_part_1 = const0 * W_part_1 # (zi * dir[1] + ⟨dzdρ, dir[ρ]⟩) * d2zdρ2
-    @. W_dir_sim /= sqrt(W_λ)'  #  U' ξ U sqrt(Λ-1)
-    ldiv!(Diagonal(W_λ), W_dir_sim) # Λ-1 U' ξ U sqrt(Λ-1)
-    W_part_2 = diff_dot_W_WW  # M_G(ξ)
-    W_part_2 = U * W_dir_sim * W_dir_sim' * U' - zi * smat(cone.Gadj * svec(U * W_part_2 * U'), R)  # U Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 U' - G'{U M(ξ) U'} * zi
-    mul!(mat, W_vecs, Hermitian(W_part_2, :U))  # U Λ-1 U' ξ U Λ-1 ξ U Λ-1 U' - U M(ξ) * zi
-    mul!(W_part_1, mat, W_vecs', true, zi)  # (zi * dir[1] + ⟨dzdρ, dir[ρ]⟩) * d2zdρ2 * zi + (U Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 U' - U M(ξ) U' * zi)
-    @views dder3_W = dder3[W_idxs]
-    smat_to_svec!(dder3_W, W_part_1, rt2)
-    @. dder3_W += const1 * dzdW 
-
-    return - 0.5 * dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
-end
-
 
 """
 Converts a vector of Kraus operators `K` into a matrix M such that
@@ -782,69 +739,4 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{Complex{T
     end
 
     return skr
-end
-
-
-function ___dder3(
-    cone::EpiQKDTri{T, R},
-    dir::AbstractVector{T},
-) where {T <: Real, R <: RealOrComplex{T}}
-    cone.dder3_aux_updated || update_dder3_aux(cone)
-    rt2 = cone.rt2
-    W_idxs = cone.W_idxs
-    zi = inv(cone.z)
-    (W_λ, W_vecs) = cone.W_fact
-    Δ3_W = cone.Δ3_W
-    dzdW = cone.dzdW
-    mat = cone.mat
-    mat2 = cone.mat2
-    dder3 = cone.dder3
-
-    u_dir = dir[1]
-    @views w_dir = dir[W_idxs]
-
-    # v, w
-    # TODO prealloc
-    W_dir = Hermitian(zero(mat), :U)
-    W_dir_sim = zero(mat)
-    W_part_1 = zero(mat)
-    diff_dot_W_WW = zero(mat)
-
-    svec_to_smat!(W_dir.data, w_dir, rt2)  # svec(ξ) -> smat(ξ)
-    spectral_outer!(W_dir_sim, W_vecs', W_dir, mat) # U' ξ U
-
-    @. mat = W_dir_sim * cone.Δ2_W  # Γ(Λ)∘(U' ξ U)
-    spectral_outer!(mat, W_vecs, Hermitian(mat, :U), mat2)  # U (Γ(Λ)∘(U' ξ U) )U'
-    Wwd = smat_to_svec!(zero(w_dir), mat, rt2)  # U (Γ(Λ)∘(U' ξ U) )U' == d2zdρ2
-
-    const0 = zi * u_dir + dot(w_dir, dzdW)  # ξ[1] * zi + ∇ρz⋅ξ[ρ]
-    const1 =
-        abs2(const0) + zi * dot(w_dir, Wwd) / 2  # zi^2 * ξ[1]^2 + dot(∇ρz⋅ξ[ρ])^2 * zi^2 + 2 zi^2 * ξ[1] * ∇ρz⋅ξ[ρ] + zi * ∇2ρρ(z)⋅ξ[ρ]/2
-
-    # u
-    dder3[1] = zi * const1
-
-    @inbounds @views for j in 1:(cone.d)
-        Wds_j = W_dir_sim[:, j]
-        for i in 1:j
-            Wds_i = W_dir_sim[:, i]
-            DΔ3_W_ij = Diagonal(Δ3_W[:, i, j])
-            diff_dot_W_WW[i, j] = dot(Wds_i, DΔ3_W_ij, Wds_j)  # M_G(ξ)
-        end
-    end
-
-    # w
-    svec_to_smat!(W_part_1, Wwd, rt2)   # U (Γ(Λ)∘(U' ξ U) )U' == d2zdρ2
-    W_part_1 = const0 * W_part_1 # (zi * dir[1] + ∇ρz⋅ξ[ρ] * zi) * d2zdρ2
-    @. W_dir_sim /= sqrt(W_λ)'  #  U' ξ U sqrt(Λ-1)
-    ldiv!(Diagonal(W_λ), W_dir_sim) # Λ-1 U' ξ U sqrt(Λ-1)
-    W_part_2 = diff_dot_W_WW  # M_G(ξ)
-    mul!(W_part_2, W_dir_sim, W_dir_sim', true, -zi)  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 - M(ξ) * zi
-    mul!(mat, W_vecs, Hermitian(W_part_2, :U))  # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' - U M(ξ) * zi
-    mul!(W_part_1, mat, W_vecs', true, zi)  # (zi * dir[1] + ⟨dzdρ, dir[ρ]⟩) * d2zdρ2 * zi + (U Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 U' - U M(ξ) U' * zi)
-    @views dder3_W = dder3[W_idxs]
-    smat_to_svec!(dder3_W, W_part_1, rt2)
-    @. dder3_W += const1 * dzdW 
-
-    return dder3
 end
