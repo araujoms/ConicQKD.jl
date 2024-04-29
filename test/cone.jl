@@ -39,8 +39,8 @@ function test_oracles(
     scale::T = T(1e-1),
     tol::Real = 1e3 * eps(T),
     init_only::Bool = false,
-    init_tol::Real = tol,
-) where {T <: Real}
+    init_tol::Real = tol
+) where {T<:Real}
     Random.seed!(1)
     dim = Cones.dimension(cone)
     Cones.setup_data!(cone)
@@ -140,8 +140,8 @@ function test_barrier(
     noise::T = T(1e-1),
     scale::T = T(1e-1),
     tol::Real = 1e10 * eps(T),
-    TFD::Type{<:Real} = T,
-) where {T <: Real}
+    TFD::Type{<:Real} = T
+) where {T<:Real}
     Random.seed!(1)
     dim = Cones.dimension(cone)
     Cones.setup_data!(cone)
@@ -164,10 +164,7 @@ function test_barrier(
 
     barrier_dir(s, t) = barrier(s + t * TFD_dir)
 
-    fd_hess_dir = ForwardDiff.gradient(
-        s -> ForwardDiff.derivative(t -> barrier_dir(s, t), 0),
-        TFD_point,
-    )
+    fd_hess_dir = ForwardDiff.gradient(s -> ForwardDiff.derivative(t -> barrier_dir(s, t), 0), TFD_point)
 
     @test Cones.hess(cone) * dir ≈ fd_hess_dir atol = tol rtol = tol
     @test Cones.inv_hess(cone) * fd_hess_dir ≈ dir atol = tol rtol = tol
@@ -177,11 +174,8 @@ function test_barrier(
 
     if Cones.use_dder3(cone)
         fd_third_dir = ForwardDiff.gradient(
-            s2 -> ForwardDiff.derivative(
-                s -> ForwardDiff.derivative(t -> barrier_dir(s2, t), s),
-                0,
-            ),
-            TFD_point,
+            s2 -> ForwardDiff.derivative(s -> ForwardDiff.derivative(t -> barrier_dir(s2, t), s), 0),
+            TFD_point
         )
 
         @test -2 * Cones.dder3(cone, dir) ≈ fd_third_dir atol = tol rtol = tol
@@ -191,11 +185,7 @@ function test_barrier(
 end
 
 # show time and memory allocation for oracles
-function show_time_alloc(
-    cone::Cones.Cone{T};
-    noise::T = T(1e-4),
-    scale::T = T(1e-1),
-) where {T <: Real}
+function show_time_alloc(cone::Cones.Cone{T}; noise::T = T(1e-4), scale::T = T(1e-1)) where {T<:Real}
     Random.seed!(1)
     dim = Cones.dimension(cone)
     println("dimension: ", dim)
@@ -264,7 +254,7 @@ function show_time_alloc(
     return
 end
 
-function perturb_scale!(point::Vector{T}, noise::T, scale::T) where {T <: Real}
+function perturb_scale!(point::Vector{T}, noise::T, scale::T) where {T<:Real}
     if !iszero(noise)
         @. point += 2 * noise * rand(T) - noise
     end
@@ -280,7 +270,7 @@ logdet_pd(W::Hermitian) = logdet(cholesky!(copy(W)))
 
 new_vec(w::Vector, dw::Int, T::Type{<:Real}) = copy(w)
 
-function new_vec(w::Vector, dw::Int, R::Type{Complex{T}}) where {T <: Real}
+function new_vec(w::Vector, dw::Int, R::Type{Complex{T}}) where {T<:Real}
     wR = zeros(Complex{eltype(w)}, dw)
     Cones.vec_copyto!(wR, w)
     return wR
@@ -292,7 +282,7 @@ function new_herm(w::Vector, dW::Int, T::Type{<:Real})
     return Hermitian(W, :U)
 end
 
-function new_herm(w::Vector, dW::Int, R::Type{Complex{T}}) where {T <: Real}
+function new_herm(w::Vector, dW::Int, R::Type{Complex{T}}) where {T<:Real}
     W = zeros(Complex{eltype(w)}, dW, dW)
     Cones.svec_to_smat!(W, w, sqrt(T(2)))
     return Hermitian(W, :U)
@@ -305,13 +295,10 @@ function rand_sppsd_pattern(dW::Int)
 end
 
 function rand_herms(ds::Int, Rd::Vector, T::Type{<:Real})
-    Ps = Vector{LinearAlgebra.HermOrSym{R, Matrix{R}} where {R <: RealOrComplex{T}}}(
-        undef,
-        length(Rd),
-    )
+    Ps = Vector{LinearAlgebra.HermOrSym{R,Matrix{R}} where {R<:RealOrComplex{T}}}(undef, length(Rd))
     A_1_half = randn(Rd[1], ds, ds)
     Ps[1] = Hermitian(A_1_half * A_1_half' + I, :U)
-    for i in 2:length(Rd)
+    for i = 2:length(Rd)
         Ps[i] = Hermitian(randn(Rd[i], ds, ds), :U)
     end
     return Ps
@@ -328,7 +315,7 @@ end
 function rand_interp(num_vars::Int, halfdeg::Int, T::Type{<:Real})
     Random.seed!(1)
     domain = PolyUtils.BoxDomain{T}(-ones(T, num_vars), ones(T, num_vars))
-    (d, _, Ps, _) = PolyUtils.interpolate(domain, halfdeg, sample = false)
+    (d, _, Ps, _) = PolyUtils.interpolate(domain, halfdeg; sample = false)
     return (d, Ps)
 end
 
@@ -352,7 +339,7 @@ end
 
 function proj(i::Integer, d::Integer; T::Type = Float64, R::Type = Complex{T})
     ketbra = Hermitian(zeros(R, d, d))
-    ketbra[i, i] = R(1)
+    ketbra[i, i] = 1
     return ketbra
 end
 
@@ -368,40 +355,43 @@ function random_protocol(din::Integer, dout::Integer; T::Type = Float64, R::Type
     d = din^2
     rho_dim = Cones.svec_length(R, d)
     rho_idxs = 2:(rho_dim+1)
-    
-    U = random_unitary(dout;T,R)
-    V = U[:,1:din]
-    gkraus = [kron(V,I(din))]
-    zkraus = [kron(proj(i,dout;R),I(din)) for i=1:dout]
+
+    U = random_unitary(dout; T, R)
+    V = U[:, 1:din]
+    gkraus = [kron(V, I(din))]
+    zkraus = [kron(proj(i, dout; R), I(din)) for i = 1:dout]
 
     G = [I(d)]
-    Z = [Zi*gkraus[1] for Zi in zkraus]
-    return G, Z, rho_dim
+    Z = [Zi * gkraus[1] for Zi in zkraus]
+    return G, Z, rho_dim, rho_idxs
 end
 
-function test_oracles(cone::Type{EpiQKDTri{T, R}}) where {T, R}
-    G,Z,rho_dim = random_protocol(2,3;T,R)
-    test_oracles(cone(G,Z,1+rho_dim),init_tol = Inf)
+function test_oracles(cone::Type{EpiQKDTri{T,R}}) where {T,R}
+    din, dout = 2, 3
+    G, Z, rho_dim, rho_idxs = random_protocol(din, dout; T, R)
+    test_oracles(cone(G, Z, 1 + rho_dim); init_tol = Inf)
 end
 
-function test_barrier(cone::Type{EpiQKDTri{T, R}}) where {T, R}
-    ghatkraus,zhatkraus,rho_dim = random_protocol(2,3;T,R)
-    G = kraus2matrix(ghatkraus,R)
-    Z = kraus2matrix(zhatkraus,R)
-            
+function test_barrier(cone::Type{EpiQKDTri{T,R}}) where {T,R}
+    din, dout = 2, 3
+    d = din^2
+    ghatkraus, zhatkraus, rho_dim, rho_idxs = random_protocol(din, dout; T, R)
+    G = kraus2matrix(ghatkraus, R)
+    Z = kraus2matrix(zhatkraus, R)
+
     function barrier(point)
         u = point[1]
         rhoH = new_herm(point[rho_idxs], d, R)
         GrhoH = new_herm(G * point[rho_idxs], d, R)
-        ZrhoH = new_herm(Z * point[rho_idxs], din*dout, R)
+        ZrhoH = new_herm(Z * point[rho_idxs], din * dout, R)
         relative_entropy = -von_neumann_entropy(GrhoH) + von_neumann_entropy(ZrhoH)
         return -real(log(u - relative_entropy)) - logdet_pd(rhoH)
     end
-    return test_barrier(cone(ghatkraus,zhatkraus,1+rho_dim), barrier)
+    return test_barrier(cone(ghatkraus, zhatkraus, 1 + rho_dim), barrier)
 end
 
-function show_time_alloc(cone::Type{EpiQKDTri{T, R}}) where {T, R}
-    G,Z,rho_dim = random_protocol(2,3;T,R)
-    return show_time_alloc(cone(G,Z,1+rho_dim))
+function show_time_alloc(cone::Type{EpiQKDTri{T,R}}) where {T,R}
+    din, dout = 2, 3
+    G, Z, rho_dim, rho_idxs = random_protocol(din, dout; T, R)
+    return show_time_alloc(cone(G, Z, 1 + rho_dim))
 end
-
