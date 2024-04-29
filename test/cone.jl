@@ -364,9 +364,7 @@ function random_unitary(d::Integer; T::Type = Float64, R::Type = Complex{T})
     return fact.Q * Λ
 end
 
-function test_oracles(cone::Type{EpiQKDTri{T, R}}) where {T, R}
-    din = 2
-    dout = 3
+function random_protocol(din::Integer, dout::Integer; T::Type = Float64, R::Type = Complex{T})
     d = din^2
     rho_dim = Cones.svec_length(R, d)
     rho_idxs = 2:(rho_dim+1)
@@ -378,25 +376,16 @@ function test_oracles(cone::Type{EpiQKDTri{T, R}}) where {T, R}
 
     G = [I(d)]
     Z = [Zi*gkraus[1] for Zi in zkraus]
+    return G, Z, rho_dim
+end
 
+function test_oracles(cone::Type{EpiQKDTri{T, R}}) where {T, R}
+    G,Z,rho_dim = random_protocol(2,3;T,R)
     test_oracles(cone(G,Z,1+rho_dim),init_tol = Inf)
 end
 
 function test_barrier(cone::Type{EpiQKDTri{T, R}}) where {T, R}
-    din = 2
-    dout = 3
-    d = din^2
-    rho_dim = Cones.svec_length(R, d)
-    rho_idxs = 2:(rho_dim+1)
-    
-    U = random_unitary(dout;T,R)
-    V = U[:,1:din]
-    gkraus = [kron(V,I(din))]
-    zkraus = [kron(proj(i,dout;R),I(din)) for i=1:dout]
-
-    ghatkraus = [I(d)]
-    zhatkraus = [Zi*gkraus[1] for Zi in zkraus]
-    
+    ghatkraus,zhatkraus,rho_dim = random_protocol(2,3;T,R)
     G = kraus2matrix(ghatkraus,R)
     Z = kraus2matrix(zhatkraus,R)
             
@@ -412,20 +401,7 @@ function test_barrier(cone::Type{EpiQKDTri{T, R}}) where {T, R}
 end
 
 function show_time_alloc(cone::Type{EpiQKDTri{T, R}}) where {T, R}
-    din = 2
-    dout = 3
-    d = din^2
-    rho_dim = Cones.svec_length(R, d)
-    rho_idxs = 2:(rho_dim+1)
-    
-    U = random_unitary(dout;T,R)
-    V = U[:,1:din]
-    gkraus = [kron(V,I(din))]
-    zkraus = [kron(proj(i,dout;R),I(din)) for i=1:dout]
-
-    G = [I(d)]
-    Z = [Zi*gkraus[1] for Zi in zkraus]
-
+    G,Z,rho_dim = random_protocol(2,3;T,R)
     return show_time_alloc(cone(G,Z,1+rho_dim))
 end
 
