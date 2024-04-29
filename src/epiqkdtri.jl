@@ -565,9 +565,9 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     # @views dder3[1] += - 2 * zi^3 * dot(cone.dzdrho, rho_dir)^2 + zi^2 * dot(ddu, rho_dir)  # ∇hρρ * (ξ[ρ],ξ[ρ])
 
     # ∇hhh * (ξ[h],ξ[h]) + (∇hhρ + ∇hρh) * (ξ[h],ξ[ρ]) + ∇hρρ * (ξ[ρ],ξ[ρ]) using Lea's code
-    const0 = zi * (dir[1] + dot(rho_dir, cone.dzdrho))  # ξ[1] * zi + ∇ρz⋅ξ[ρ]
-    const1 = abs2(const0) + zi * dot(rho_dir, ddu) / 2
-    # const1 = zi^2 * ξ[1]^2 + dot(∇ρz⋅ξ[ρ])^2 * zi^2 + 2 zi^2 * ξ[1] * ∇ρz⋅ξ[ρ] + zi * ∇2ρρ(z)⋅ξ[ρ]/2
+    const0 = zi * (dir[1] + dot(rho_dir, cone.dzdrho))  # ξ[1] * zi + ∇ρz⋅ξ[ρ] * zi
+    const1 = abs2(const0) - zi * dot(rho_dir, ddu) / 2
+    # const1 = zi^2 * ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 * zi^2 + 2 zi^2 * ξ[1] * ∇ρz⋅ξ[ρ] - zi * ∇2ρρ(z)⋅ξ[ρ]/2
     @views dder3[1] = -2 * zi * const1
 
     # ! Code not working in this region ↓↓↓
@@ -576,13 +576,14 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     @views dder3[cone.rho_idxs] = -2 * zi^3 * cone.dzdrho * dir[1]^2
 
     # ∇ρhρ + # ∇ρρh * (ξ[h],ξ[ρ])
-    @views dder3[cone.rho_idxs] += 2 * (- 2 * zi^3 * dot(cone.dzdrho, rho_dir) * cone.dzdrho * dir[1] + zi^2 * ddu * dir[1])
+    @views dder3[cone.rho_idxs] += 2 * (- 2 * zi^3 * dot(cone.dzdrho, rho_dir) * cone.dzdrho * dir[1])
+    @views dder3[cone.rho_idxs] += 2 * (zi^2 * ddu * dir[1])  # (1)
 
     # ∇ρρρ * (ξ[ρ],ξ[ρ])
     @views dder3[cone.rho_idxs] += - 2 * zi^3 * dot(cone.dzdrho, rho_dir)^2 * cone.dzdrho
-    @views dder3[cone.rho_idxs] += zi^2 * dot(ddu, rho_dir) * cone.dzdrho
-    @views dder3[cone.rho_idxs] += zi^2 * dot(cone.dzdrho, rho_dir) * ddu
-    @views dder3[cone.rho_idxs] += - zi * d3zdrho3(rho_dir, cone)
+    @views dder3[cone.rho_idxs] += zi^2 * dot(ddu, rho_dir) * cone.dzdrho  # (2)
+    @views dder3[cone.rho_idxs] += 2 * zi^2 * dot(cone.dzdrho, rho_dir) * ddu  # (3)
+    @views dder3[cone.rho_idxs] += - zi * d3zdrho3(rho_dir, cone)  # (4)
 
     # ! Code not working in this region ↑↑↑
 
