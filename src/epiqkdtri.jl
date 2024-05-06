@@ -523,78 +523,35 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     dder3 = cone.dder3
     rt2 = cone.rt2
     zi = inv(cone.z)
-    (rho_λ, rho_vecs) = cone.rho_fact
+    (rho_λ, U) = cone.rho_fact
 
     @views rho_dir = dir[cone.rho_idxs]
-
     ddu = d2zdrho2(rho_dir, cone) # ∇ρρ(u) * (:, ξ[ρ])
 
-    # # # *  LEA'S dder3 (ρ part: doesn't pass the test and doesn't agree with my code)
+    const0 = zi * (dir[1] + dot(rho_dir, cone.dzdrho))  # ξ[1] * zi + ∇ρz⋅ξ[ρ]
+    const1 =
+        zi * (abs2(const0) - zi * dot(rho_dir, ddu) * 0.5)  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
 
-    # const0 = zi * (dir[1] + dot(rho_dir, cone.dzdrho))  # ξ[1] * zi + ∇ρz⋅ξ[ρ]
-    # const1 =
-    #     zi * (abs2(const0) - zi * dot(rho_dir, ddu) * 0.5)  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
+    # u
+    @views dder3[1] = const1  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
 
-    # # u
-    # @views dder3[1] = const1  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
+    # ρ
+    svec_to_smat!(cone.mat, rho_dir, rt2) # ξ -> svec(ξ)
+    spectral_outer!(cone.mat2, U', Hermitian(cone.mat), cone.mat3)  # U' ξ U
+    @. cone.mat2 /= sqrt(rho_λ)'  #  U' ξ U sqrt(Λ-1)
+    ldiv!(Diagonal(rho_λ), cone.mat2) # Λ-1 U' ξ U sqrt(Λ-1)
+    mul!(cone.mat, cone.mat2, cone.mat2')  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1
+    spectral_outer!(cone.mat2, U, Hermitian(cone.mat), cone.mat3)  # mat2 = U Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 U'
+    svec_to_smat!(cone.mat, d3zdrho3(rho_dir, cone), rt2)  # d3zdρ3 -> svec(d3zdρ3)
+    cone.mat = cone.mat2 + zi * cone.mat * 0.5 # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2
+    svec_to_smat!(cone.mat3, const0 * d2zdrho2(rho_dir, cone), rt2) # zi * (ξ[1] + ∇ρz⋅ξ[ρ]) * d2zdρ2
+    cone.mat = cone.mat - cone.mat3 * zi  # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2 - zi^2 * (ξ[1] + ∇ρz⋅ξ[ρ]) * d2zdρ2
+    @views dder3_rho = dder3[cone.rho_idxs]
+    smat_to_svec!(dder3_rho, cone.mat, rt2)
+    @. dder3_rho += const1 * cone.dzdrho  # += zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) * dzdρ - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2 * dzdρ
 
-    # # ρ
-    # der_logdet = zero(cone.mat)
-    # der_logdet_aux = zero(cone.mat)
-    # d2zdρ2_term = zero(cone.mat)
-    # W_part_2 = zero(cone.mat)
-    # W_part_3 = zero(cone.mat)
-    
-    # @. cone.mat2 /= sqrt(rho_λ)'  #  U' ξ U sqrt(Λ-1)
-    # ldiv!(Diagonal(rho_λ), cone.mat2) # Λ-1 U' ξ U sqrt(Λ-1)
-    # mul!(cone.mat, cone.mat2, cone.mat2')  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1
-    # cone.mat = rho_vecs * cone.mat * rho_vecs'  # U Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 U'
-    # svec_to_smat!(cone.mat2, d3zdrho3(rho_dir, cone), rt2)  
-    # cone.mat = cone.mat + zi * cone.mat2 * 0.5 # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2
-    # svec_to_smat!(cone.mat3, const0 * d2zdrho2(rho_dir, cone), rt2) # zi * (ξ[1] + ∇ρz⋅ξ[ρ]) * d2zdρ2
-    # cone.mat = cone.mat - cone.mat3 * zi  # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2 - zi^2 * (ξ[1] + ∇ρz⋅ξ[ρ]) * d2zdρ2
-    # @views dder3_rho = dder3[cone.rho_idxs]
-    # smat_to_svec!(dder3_rho, cone.mat, rt2)
-    # @. dder3_rho += const1 * cone.dzdrho  # += zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) * dzdρ - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2 * dzdρ
+    return dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
 
-    # return dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
-
-
-    # # * PABLOS'S dder3 (ρ part: doesn't pass the test and doesn't agree with Lea's code)
-
-    @views dder3[1] = - 2 * zi^3 * dir[1]^2  # ∇hhh * (ξ[h],ξ[h])
-    @views dder3[1] += 2 * (- 2 * zi^3 * dir[1] * dot(cone.dzdrho, rho_dir))  # ∇hhρ + ∇hρh * (ξ[h],ξ[ρ])
-    @views dder3[1] += - 2 * zi^3 * dot(cone.dzdrho, rho_dir)^2 + zi^2 * dot(ddu, rho_dir)  # ∇hρρ * (ξ[ρ],ξ[ρ])
-
-    # ∇hhh * (ξ[h],ξ[h]) + (∇hhρ + ∇hρh) * (ξ[h],ξ[ρ]) + ∇hρρ * (ξ[ρ],ξ[ρ]) using Lea's code
-    const0 = zi * (dir[1] + dot(rho_dir, cone.dzdrho))  # ξ[1] * zi + ∇ρz⋅ξ[ρ] * zi
-    const1 = abs2(const0) - zi * dot(rho_dir, ddu) / 2
-    # const1 = zi^2 * ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 * zi^2 + 2 zi^2 * ξ[1] * ∇ρz⋅ξ[ρ] - zi * ∇2ρρ(z)⋅ξ[ρ]/2
-    @views dder3[1] = -2 * zi * const1
-
-    # ∇ρhh * (ξ[h],ξ[h])
-    @views dder3[cone.rho_idxs] = -2 * zi^3 * cone.dzdrho * dir[1]^2
-
-    # ∇ρhρ + # ∇ρρh * (ξ[h],ξ[ρ])
-    @views dder3[cone.rho_idxs] += 2 * (- 2 * zi^3 * dot(cone.dzdrho, rho_dir) * cone.dzdrho * dir[1])
-    @views dder3[cone.rho_idxs] += 2 * (zi^2 * ddu * dir[1])  # (1)
-
-    # ∇ρρρ * (ξ[ρ],ξ[ρ])
-    @views dder3[cone.rho_idxs] += - 2 * zi^3 * dot(cone.dzdrho, rho_dir)^2 * cone.dzdrho
-    @views dder3[cone.rho_idxs] += zi^2 * dot(ddu, rho_dir) * cone.dzdrho  # (2)
-    @views dder3[cone.rho_idxs] += 2 * zi^2 * dot(cone.dzdrho, rho_dir) * ddu  # (3)
-    @views dder3[cone.rho_idxs] += - zi * d3zdrho3(rho_dir, cone)  # (4)
-
-    # # * Lea's Third derivative of log(det(ρ)) wrt ρ
-    svec_to_smat!(cone.mat2, rho_dir, rt2)  # svec(ξ) -> smat(ξ)
-    spectral_outer!(cone.mat, rho_vecs', Hermitian(cone.mat2), cone.mat3)  # U' ξ U
-    @. cone.mat /= sqrt(rho_λ)'  #  U' ξ U sqrt(Λ-1)
-    ldiv!(Diagonal(rho_λ), cone.mat) # Λ-1 U' ξ U sqrt(Λ-1)
-    mul!(cone.mat2, cone.mat, cone.mat')  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1
-    spectral_outer!(cone.mat, rho_vecs, Hermitian(cone.mat2), cone.mat3)  # U Λ^-1 U' ξ U Λ^-1 U' ξ U Λ^-1 U'
-    @views dder3[cone.rho_idxs] += - 2 * smat_to_svec!(cone.vec, cone.mat, rt2)
-
-    return - 0.5 * dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
 end
 
 """
