@@ -449,7 +449,7 @@ function update_dder3_aux(cone::EpiQKDTri)
     cone.hess_aux_updated || update_hess_aux(cone)
 
     Δ3!(cone.Δ3G, cone.Δ2G, cone.Grho_fact.values)   # Γ2(Λ_G)
-    Δ3!(cone.Δ3Z, cone.Δ2Z, cone.Grho_fact.values)   # Γ2(Λ_Z)
+    Δ3!(cone.Δ3Z, cone.Δ2Z, cone.Zrho_fact.values)   # Γ2(Λ_Z)
 
     cone.dder3_aux_updated = true
     return
