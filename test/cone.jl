@@ -391,7 +391,7 @@ function test_barrier(cone::Type{EpiQKDTri{T,R}}) where {T,R}
 end
 
 function show_time_alloc(cone::Type{EpiQKDTri{T,R}}) where {T,R}
-    din, dout = 2, 3
+    din, dout = 4, 5
     G, Z, rho_dim, rho_idxs = random_protocol(din, dout; T, R)
     return show_time_alloc(cone(G, Z, 1 + rho_dim))
 end

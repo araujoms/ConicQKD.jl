@@ -392,14 +392,15 @@ function hess_prod!(
     @inbounds for i = 1:size(arr, 2)
         # Hhh * a_h + Hhρ * a_ρ
         @views rho_arr = arr[rho_idxs, i]
+        @views rho_prod = prod[rho_idxs, i]
         prod[1, i] = abs2(zi) * (arr[1, i] + dot(dzdrho, rho_arr))  # ξ[1]/u^2 + ⟨∇_ρ(u),ξ[ρ]⟩/u^2
 
         # Hhρ * a_h + Hρρ * a_ρ
-        @views @. prod[rho_idxs, i] = prod[1, i] * dzdrho
+        @. rho_prod = prod[1, i] * dzdrho
 
-        d2zdρ2 = d2zdrho2!(cone.vec, rho_arr, cone)
+        d2zdrho2!(d2zdρ2, rho_arr, cone)
 
-        @views prod[rho_idxs, i] -= zi * d2zdρ2
+        @. rho_prod -= zi * d2zdρ2
 
         # Hessian of log(det(ρ))
         svec_to_smat!(cone.mat, rho_arr, rt2)  # svec(ξ) -> smat(ξ)
@@ -407,7 +408,7 @@ function hess_prod!(
         ldiv!(Diagonal(rho_λ), cone.mat)  # Λ^-1 U' ξ U
         rdiv!(cone.mat, Diagonal(rho_λ))  # Λ^-1 U' ξ U Λ^-1
         spectral_outer!(cone.mat, rho_vecs, Hermitian(cone.mat), cone.mat2)  # U Λ^-1 U' ξ U Λ^-1 U'
-        @views prod[rho_idxs, i] += smat_to_svec!(cone.vec, cone.mat, rt2)
+        rho_prod .+= smat_to_svec!(cone.vec, cone.mat, rt2)
     end
 
     return prod
@@ -509,15 +510,18 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     # ρ
     svec_to_smat!(cone.mat, rho_dir, rt2) # ξ -> svec(ξ)
     spectral_outer!(cone.mat2, U', Hermitian(cone.mat), cone.mat3)  # U' ξ U
-    @. cone.mat2 /= sqrt(rho_λ)'  #  U' ξ U sqrt(Λ-1)
+    @views tempvec = cone.mat3[:, 1]
+    tempvec .= sqrt.(rho_λ)
+    @. cone.mat2 /= tempvec' #  U' ξ U sqrt(Λ-1)
     ldiv!(Diagonal(rho_λ), cone.mat2) # Λ-1 U' ξ U sqrt(Λ-1)
     mul!(cone.mat, cone.mat2, cone.mat2')  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1
     spectral_outer!(cone.mat2, U, Hermitian(cone.mat), cone.mat3)  # mat2 = U Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 U'
     @views dder3_rho = dder3[cone.rho_idxs]
     smat_to_svec!(dder3_rho, cone.mat2, rt2)
-    dder3_rho .+= zi * d3zdrho3!(cone.vec, rho_dir, cone) * 0.5 # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2
-    dder3_rho .-= const0 * d2zdrho2!(cone.vec, rho_dir, cone) * zi  # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2 - zi^2 * (ξ[1] + ∇ρz⋅ξ[ρ]) * d2zdρ2
+    @. dder3_rho -= const0 * ddu * zi  # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2 - zi^2 * (ξ[1] + ∇ρz⋅ξ[ρ]) * d2zdρ2
 
+    d3zdrho3!(cone.vec, rho_dir, cone)
+    @. dder3_rho += zi * cone.vec * 0.5 # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2
     @. dder3_rho += const1 * cone.dzdrho  # += zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) * dzdρ - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2 * dzdρ
 
     return dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
