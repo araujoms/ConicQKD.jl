@@ -18,7 +18,7 @@ test_files = ["cone"]
 println()
 @info("starting all tests")
 println()
-timings = Dict{String, Float64}()
+timings = Dict{String,Float64}()
 
 @testset "all tests" begin
     all_test_time = @elapsed for t in test_files

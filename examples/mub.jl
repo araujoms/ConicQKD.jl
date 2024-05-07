@@ -98,6 +98,6 @@ function mub_rate(::Type{T}, v::Real, d::Integer, n::Integer) where {T}
     set_attribute(model, "verbose", true)
     JuMP.optimize!(model)
     return JuMP.objective_value(model)
-    #    return JuMP.solve_time(model)    
+    #return JuMP.solve_time(model)
 end
 mub_rate(v::Real, d::Integer, n::Integer) = mub_rate(ComplexF64, v, d, n)

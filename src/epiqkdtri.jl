@@ -272,17 +272,6 @@ function update_grad(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     smat_to_svec!(cone.vec, cone.rho_inv, rt2)
     @views g[cone.rho_idxs] .-= cone.vec
 
-    #    fd_grad = ForwardDiff.gradient(p->barrier(p,cone),cone.point)
-
-    #    display("analytic:")
-    #    display(new_herm(cleanup!(g[cone.rho_idxs]),cone.d,R))
-    #    display("ForwardDiff:")
-    #    display(new_herm(cleanup!(fd_grad[cone.rho_idxs]),cone.d,R))
-
-    #backend = AD.FiniteDifferencesBackend(FiniteDifferences.forward_fdm(5, 1))
-    #fd_grad_old = AD.gradient(backend, barrier_old, cone.point)[1]
-
-    #    g .= fd_grad
     cone.grad_updated = true
     return cone.grad
 end
@@ -331,36 +320,16 @@ function update_hess(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     mul!(d2zdrho2, cone.big_Zmat, cone.Z, true, T(-1))
     @. Hrho -= zi * d2zdrho2
 
-    #    d2zdrho2 .= -cone.G'*d2zdrho2G*cone.G + cone.Z'*d2zdrho2Z*cone.Z
-    #    @. Hrho -= zi*d2zdrho2
-
-    #    fd_hess = ForwardDiff.hessian(p->barrier(p,cone),cone.point)
-
-    #    display("analytic:")
-    #    display(diag(Symmetric(H))[2:end])
-    #    display("ForwardDiff:")
-    #    display(diag(fd_hess))
-
     cone.hess_updated = true
     return cone.hess
 end
 
-# function analytic_hess_prod!(prod::AbstractVecOrMat, dir::AbstractVecOrMat, cone::EpiQKDTri{T, R}) where {T <: Real, R <: RealOrComplex{T}}
-#    @assert is_feas(cone)
-
-#    @inbounds for i in 1:size(dir, 2)
-#        view(prod, :, i) .= ForwardDiff.gradient(
-#            s -> ForwardDiff.derivative(t -> barrier(s + t * view(dir, :, i),cone), 0),
-#            cone.point,
-#        )
-#    end
-
-#    return prod
-# end
-
-function d2zdrho2(rho_arr::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
+function d2zdrho2!(
+    d2zdρ2::AbstractVector{T},
+    rho_dir::AbstractVector{T},
+    cone::EpiQKDTri{T,R}
+) where {T<:Real,R<:RealOrComplex{T}}
     rt2 = cone.rt2
-    d2zdρ2 = cone.vec
     Gvec = cone.Gvec
     Zvec = cone.Zvec
     Gmat = cone.Gmat
@@ -374,9 +343,9 @@ function d2zdrho2(rho_arr::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Rea
 
     # Code corresponding to G
     if cone.is_G_identity
-        svec_to_smat!(Gmat, rho_arr, rt2)
+        svec_to_smat!(Gmat, rho_dir, rt2)
     else
-        mul!(Gvec, cone.G, rho_arr)
+        mul!(Gvec, cone.G, rho_dir)
         svec_to_smat!(Gmat, Gvec, rt2)
     end # Gmat = G(ξ)
     spectral_outer!(Gmat2, Grho_vecs', Hermitian(Gmat), cone.Gmat3) # (U'_G G(ξ)U_G)
@@ -391,7 +360,7 @@ function d2zdrho2(rho_arr::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Rea
     end
 
     # Code corresponding to Z
-    mul!(Zvec, cone.Z, rho_arr)
+    mul!(Zvec, cone.Z, rho_dir)
     svec_to_smat!(Zmat, Zvec, rt2)  # Zmat = Z(ξ)
     spectral_outer!(Zmat2, Zrho_vecs', Hermitian(Zmat), Zmat3) # (U'_Z Z(ξ)U_Z)
 
@@ -428,7 +397,7 @@ function hess_prod!(
         # Hhρ * a_h + Hρρ * a_ρ
         @views @. prod[rho_idxs, i] = prod[1, i] * dzdrho
 
-        d2zdρ2 = d2zdrho2(rho_arr, cone)
+        d2zdρ2 = d2zdrho2!(cone.vec, rho_arr, cone)
 
         @views prod[rho_idxs, i] -= zi * d2zdρ2
 
@@ -455,9 +424,12 @@ function update_dder3_aux(cone::EpiQKDTri)
     return
 end
 
-function d3zdrho3(rho_arr::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
+function d3zdrho3!(
+    d3zdρ3::AbstractVector{T},
+    rho_dir::AbstractVector{T},
+    cone::EpiQKDTri{T,R}
+) where {T<:Real,R<:RealOrComplex{T}}
     rt2 = cone.rt2
-    d3zdρ3 = cone.vec
     Gvec = cone.Gvec
     Zvec = cone.Zvec
     Gmat = cone.Gmat
@@ -472,18 +444,18 @@ function d3zdrho3(rho_arr::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Rea
 
     # Code corresponding to G
     if cone.is_G_identity
-        svec_to_smat!(Gmat, rho_arr, rt2)
+        svec_to_smat!(Gmat, rho_dir, rt2)
     else
-        mul!(Gvec, cone.G, rho_arr)
+        mul!(Gvec, cone.G, rho_dir)
         svec_to_smat!(Gmat, Gvec, rt2)
     end # Gmat = G(ξ)
     Gvec_sim = spectral_outer!(Gmat2, Grho_vecs', Hermitian(Gmat), Gmat3) # (U'_G G(ξ)U_G)
 
-    @views Gtempvec = cone.Gmat3[:,1]
+    @views Gtempvec = cone.Gmat3[:, 1]
     @inbounds @views for j = 1:(cone.Gd)
         for i = 1:j
-            Gtempvec .= cone.Δ3G[i, j, :] .* Gvec_sim[:,j]
-            Gmat[i, j] = 2*dot(Gvec_sim[:,i], Gtempvec)
+            Gtempvec .= cone.Δ3G[i, j, :] .* Gvec_sim[:, j]
+            Gmat[i, j] = 2 * dot(Gvec_sim[:, i], Gtempvec)
         end
     end
     # M_G(ξ) = 2 ∑_k ξ_ik ξ_jk Γ_ijk(Λ_G)
@@ -498,15 +470,15 @@ function d3zdrho3(rho_arr::AbstractVecOrMat, cone::EpiQKDTri{T,R}) where {T<:Rea
     end
 
     # Code corresponding to Z
-    mul!(Zvec, cone.Z, rho_arr)
+    mul!(Zvec, cone.Z, rho_dir)
     svec_to_smat!(Zmat, Zvec, rt2)  # Zmat = Z(ξ)
     Zvec_sim = spectral_outer!(Zmat2, Zrho_vecs', Hermitian(Zmat), Zmat3) # (U'_Z Z(ξ)U_Z)
 
-    @views Ztempvec = cone.Zmat3[:,1]
+    @views Ztempvec = cone.Zmat3[:, 1]
     @inbounds @views for j = 1:(cone.Zd)
         for i = 1:j
-            Ztempvec .= cone.Δ3Z[i, j, :] .* Zvec_sim[:,j]
-            Zmat[i, j] = 2*dot(Zvec_sim[:,i], Ztempvec)
+            Ztempvec .= cone.Δ3Z[i, j, :] .* Zvec_sim[:, j]
+            Zmat[i, j] = 2 * dot(Zvec_sim[:, i], Ztempvec)
         end
     end
     # M_Z(ξ) = 2 ∑_k ξ_ik ξ_jk Γ_ijk(Λ_Z)
@@ -526,14 +498,13 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     (rho_λ, U) = cone.rho_fact
 
     @views rho_dir = dir[cone.rho_idxs]
-    ddu = d2zdrho2(rho_dir, cone) # ∇ρρ(u) * (:, ξ[ρ])
+    ddu = d2zdrho2!(cone.vec, rho_dir, cone) # ∇ρρ(u) * (:, ξ[ρ])
 
     const0 = zi * (dir[1] + dot(rho_dir, cone.dzdrho))  # ξ[1] * zi + ∇ρz⋅ξ[ρ]
-    const1 =
-        zi * (abs2(const0) - zi * dot(rho_dir, ddu) * 0.5)  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
+    const1 = zi * (abs2(const0) - zi * dot(rho_dir, ddu) * 0.5)  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
 
     # u
-    @views dder3[1] = const1  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
+    dder3[1] = const1  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
 
     # ρ
     svec_to_smat!(cone.mat, rho_dir, rt2) # ξ -> svec(ξ)
@@ -542,16 +513,14 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     ldiv!(Diagonal(rho_λ), cone.mat2) # Λ-1 U' ξ U sqrt(Λ-1)
     mul!(cone.mat, cone.mat2, cone.mat2')  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1
     spectral_outer!(cone.mat2, U, Hermitian(cone.mat), cone.mat3)  # mat2 = U Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 U'
-    svec_to_smat!(cone.mat, d3zdrho3(rho_dir, cone), rt2)  # d3zdρ3 -> svec(d3zdρ3)
-    cone.mat = cone.mat2 + zi * cone.mat * 0.5 # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2
-    svec_to_smat!(cone.mat3, const0 * d2zdrho2(rho_dir, cone), rt2) # zi * (ξ[1] + ∇ρz⋅ξ[ρ]) * d2zdρ2
-    cone.mat = cone.mat - cone.mat3 * zi  # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2 - zi^2 * (ξ[1] + ∇ρz⋅ξ[ρ]) * d2zdρ2
     @views dder3_rho = dder3[cone.rho_idxs]
-    smat_to_svec!(dder3_rho, cone.mat, rt2)
+    smat_to_svec!(dder3_rho, cone.mat2, rt2)
+    dder3_rho .+= zi * d3zdrho3!(cone.vec, rho_dir, cone) * 0.5 # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2
+    dder3_rho .-= const0 * d2zdrho2!(cone.vec, rho_dir, cone) * zi  # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2 - zi^2 * (ξ[1] + ∇ρz⋅ξ[ρ]) * d2zdρ2
+
     @. dder3_rho += const1 * cone.dzdrho  # += zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) * dzdρ - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2 * dzdρ
 
     return dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
-
 end
 
 """
