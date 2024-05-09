@@ -1,7 +1,7 @@
-using ConicQKD
-using JuMP
-using Ket
 using LinearAlgebra
+using JuMP
+using ConicQKD
+using Ket
 import Hypatia
 import Hypatia.Cones
 import JLD2
@@ -64,9 +64,7 @@ Note that `d` must be a prime number, and 2 ≤ `n` ≤ `d` + 1"
 function mub_rate(::Type{T}, v::Real, d::Integer, n::Integer) where {T}
     R = real(T)
     is_complex = (T <: Complex)
-
     v = R(v)
-    W = v + (1 - v) / d
     model = GenericModel{R}()
     if is_complex
         @variable(model, rho[1:d^2, 1:d^2], Hermitian)
@@ -74,11 +72,11 @@ function mub_rate(::Type{T}, v::Real, d::Integer, n::Integer) where {T}
         @variable(model, rho[1:d^2, 1:d^2], Symmetric)
     end
     corr_rho = corr(rho, bases(d, n))
+    W = v + (1 - v) / d
     corr_iso = W * ones(n)
-    JuMP.@constraint(model, corr_rho .== corr_iso)
-    JuMP.@constraint(model, tr(rho) == 1)
-    side::Int = size(rho, 2)
-    vec_dim = Cones.svec_length(T, side)
+    @constraint(model, corr_rho .== corr_iso)
+    @constraint(model, tr(rho) == 1)
+    vec_dim = Cones.svec_length(T, d^2)
     rho_vec = Vector{GenericAffExpr{R,GenericVariableRef{R}}}(undef, vec_dim)
 
     if is_complex
@@ -90,14 +88,14 @@ function mub_rate(::Type{T}, v::Real, d::Integer, n::Integer) where {T}
     G = [I(d^2)]
     ZG = zgkraus(d)
 
-    JuMP.@variable(model, h)
-    JuMP.@objective(model, Min, h / log(R(2)))
-    JuMP.@constraint(model, [h; rho_vec] in EpiQKDTriCone{R,T}(G, ZG, 1 + vec_dim))
+    @variable(model, h)
+    @objective(model, Min, h / log(R(2)))
+    @constraint(model, [h; rho_vec] in EpiQKDTriCone{R,T}(G, ZG, 1 + vec_dim))
 
     set_optimizer(model, Hypatia.Optimizer{R})
     set_attribute(model, "verbose", true)
-    JuMP.optimize!(model)
-    return JuMP.objective_value(model)
-    #return JuMP.solve_time(model)
+    optimize!(model)
+    return objective_value(model)
+    #return solve_time(model)
 end
 mub_rate(v::Real, d::Integer, n::Integer) = mub_rate(ComplexF64, v, d, n)
