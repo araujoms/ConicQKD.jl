@@ -61,7 +61,7 @@ hab(v, d) = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(d - 1
 "Computes the conditional entropy H(A|E) numerically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs.
 
 Note that `d` must be a prime number, and 2 ≤ `n` ≤ `d` + 1"
-function mub_rate(::Type{T}, v::Real, d::Integer, n::Integer) where {T}
+function mub_rate(::Type{T}, v::Real, d::Integer, n::Integer = d + 1) where {T}
     R = real(T)
     is_complex = (T <: Complex)
     v = R(v)
@@ -98,4 +98,4 @@ function mub_rate(::Type{T}, v::Real, d::Integer, n::Integer) where {T}
     return objective_value(model)
     #return solve_time(model)
 end
-mub_rate(v::Real, d::Integer, n::Integer) = mub_rate(ComplexF64, v, d, n)
+mub_rate(v::Real, d::Integer, n::Integer = d + 1) = mub_rate(ComplexF64, v, d, n)

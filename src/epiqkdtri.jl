@@ -43,8 +43,6 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     rho::Matrix{R}
     Grho::Matrix{R}
     Zrho::Matrix{R}
-    Grho_log::Matrix{R}
-    Zrho_log::Matrix{R}
     G::Matrix{T}
     Z::Matrix{T}
     Gadj::Matrix{T}
@@ -53,7 +51,7 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Grho_fact::Eigen{R}
     Zrho_fact::Eigen{R}
     rho_inv::Matrix{R}
-    rho_λ_log::Vector{T}
+    rho_λ_inv::Vector{T}
     Grho_λ_log::Vector{T}
     Zrho_λ_log::Vector{T}
     z::T
@@ -131,8 +129,6 @@ function setup_extra_data!(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex
     cone.rho = zeros(R, d, d)
     cone.Grho = zeros(R, Gd, Gd)
     cone.Zrho = zeros(R, Zd, Zd)
-    cone.Grho_log = zeros(R, Gd, Gd)
-    cone.Zrho_log = zeros(R, Zd, Zd)
     cone.rho_inv = zeros(R, d, d)
     cone.dzdrho = zeros(T, rho_dim)
     cone.Δ2G = zeros(T, Gd, Gd)
@@ -142,7 +138,7 @@ function setup_extra_data!(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex
     cone.d2zdrho2 = zeros(T, rho_dim, rho_dim)
     cone.d2zdrho2G = zeros(T, Grho_dim, Grho_dim)
     cone.d2zdrho2Z = zeros(T, Zrho_dim, Zrho_dim)
-    cone.rho_λ_log = zeros(T, d)
+    cone.rho_λ_inv = zeros(T, d)
     cone.Grho_λ_log = zeros(T, Gd)
     cone.Zrho_λ_log = zeros(T, Zd)
 
@@ -252,23 +248,32 @@ function update_grad(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     rt2 = cone.rt2
     g = cone.grad
     dzdrho = cone.dzdrho
+    Gmat2 = cone.Gmat2
+    Zmat2 = cone.Zmat2
 
     zi = inv(cone.z)
     g[1] = -zi
 
-    spectral_outer!(cone.Grho_log, cone.Grho_fact.vectors, cone.Grho_λ_log, cone.Gmat)
-    smat_to_svec!(cone.Gvec, I(cone.Gd) + cone.Grho_log, rt2)
+    spectral_outer!(Gmat2, cone.Grho_fact.vectors, cone.Grho_λ_log, cone.Gmat)
+    for i = 1:cone.Gd
+        Gmat2[i, i] += 1
+    end
+    smat_to_svec!(cone.Gvec, Gmat2, rt2)
     cone.is_G_identity ? dzdrho .= cone.Gvec : mul!(dzdrho, cone.Gadj, cone.Gvec)
 
-    spectral_outer!(cone.Zrho_log, cone.Zrho_fact.vectors, cone.Zrho_λ_log, cone.Zmat)
-    smat_to_svec!(cone.Zvec, I(cone.Zd) + cone.Zrho_log, rt2)
+    spectral_outer!(Zmat2, cone.Zrho_fact.vectors, cone.Zrho_λ_log, cone.Zmat)
+    for i = 1:cone.Zd
+        Zmat2[i, i] += 1
+    end
+    smat_to_svec!(cone.Zvec, Zmat2, rt2)
     mul!(dzdrho, cone.Zadj, cone.Zvec, true, T(-1))
 
-    @views g[cone.rho_idxs] .= -zi * dzdrho
+    @. @views g[cone.rho_idxs] = -zi * dzdrho
 
     cone.rho_fact = cone.is_G_identity ? cone.Grho_fact : eigen(Hermitian(cone.rho))
     (rho_λ, rho_vecs) = cone.rho_fact
-    spectral_outer!(cone.rho_inv, rho_vecs, inv.(rho_λ), cone.mat) #carefull rho_inv is not exactly Hermitian
+    cone.rho_λ_inv .= inv.(rho_λ)
+    spectral_outer!(cone.rho_inv, rho_vecs, cone.rho_λ_inv, cone.mat) #carefull rho_inv is not exactly Hermitian
     smat_to_svec!(cone.vec, cone.rho_inv, rt2)
     @views g[cone.rho_idxs] .-= cone.vec
 
@@ -510,9 +515,8 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     # ρ
     svec_to_smat!(cone.mat, rho_dir, rt2) # ξ -> svec(ξ)
     spectral_outer!(cone.mat2, U', Hermitian(cone.mat), cone.mat3)  # U' ξ U
-    @views tempvec = cone.mat3[:, 1]
-    tempvec .= sqrt.(rho_λ)
-    @. cone.mat2 /= tempvec' #  U' ξ U sqrt(Λ-1)
+    cone.rho_λ_inv .= sqrt.(rho_λ)
+    @. cone.mat2 /= cone.rho_λ_inv' #  U' ξ U sqrt(Λ-1)
     ldiv!(Diagonal(rho_λ), cone.mat2) # Λ-1 U' ξ U sqrt(Λ-1)
     mul!(cone.mat, cone.mat2, cone.mat2')  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1
     spectral_outer!(cone.mat2, U, Hermitian(cone.mat), cone.mat3)  # mat2 = U Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 U'
