@@ -179,34 +179,6 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiQKDTri{T,R}) where 
     return arr
 end
 
-logdet_pd(W::Hermitian) = logdet(cholesky!(copy(W)))
-
-function new_herm(w, dW::Int, T::Type{<:Real})
-    W = similar(w, dW, dW)
-    Cones.svec_to_smat!(W, w, sqrt(T(2)))
-    return Hermitian(W, :U)
-end
-
-function new_herm(w, dW::Int, R::Type{Complex{T}}) where {T<:Real}
-    W = zeros(Complex{eltype(w)}, dW, dW)
-    Cones.svec_to_smat!(W, w, sqrt(T(2)))
-    return Hermitian(W, :U)
-end
-
-function von_neumann_entropy(rho)
-    λ = eigvals(rho)
-    return -sum(λ .* log.(λ))
-end
-
-function barrier(point, cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
-    u = point[1]
-    rhoH = new_herm(point[cone.rho_idxs], cone.d, R)
-    GrhoH = new_herm(cone.G * point[cone.rho_idxs], cone.d, R)
-    ZrhoH = new_herm(cone.Z * point[cone.rho_idxs], cone.d, R)
-    relative_entropy = -von_neumann_entropy(GrhoH) + von_neumann_entropy(ZrhoH)
-    return -real(log(u - relative_entropy)) - logdet_pd(rhoH)
-end
-
 function update_feas(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     @assert !cone.feas_updated
     point = cone.point
@@ -570,7 +542,7 @@ function smat(v, R)
 end
 
 """
-Computes `skr` such that `skr*svec(x) = svec(mat*x*mat')` for real `mat`
+Computes `skr` such that `skr*svec(x) = svec(mat*x*mat')` for real `mat` and Hermitian `x`
 """
 function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{T}, rt2::T) where {T<:Real}
     dout, din = size.(Ref(mat), (1, 2))
@@ -606,7 +578,7 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{T}, rt2::
 end
 
 """
-Computes `skr` such that `skr*svec(x) = svec(mat*x*mat')` for complex `mat`
+Computes `skr` such that `skr*svec(x) = svec(mat*x*mat')` for complex `mat` and Hermitian `x`
 """
 function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{Complex{T}}, rt2::T) where {T<:Real}
     dout, din = size.(Ref(mat), (1, 2))

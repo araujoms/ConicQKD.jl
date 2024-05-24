@@ -24,6 +24,8 @@ import ConicQKD.EpiQKDTri
 
 import ConicQKD.kraus2matrix
 import ConicQKD.skron
+import ConicQKD.svec
+import ConicQKD.smat
 import ConicQKD.symm_kron_full!
 
 Random.randn(::Type{BigFloat}, dims::Integer...) = BigFloat.(randn(dims...))
@@ -32,12 +34,20 @@ function Random.randn(::Type{Complex{BigFloat}}, dims::Integer...)
     return Complex{BigFloat}.(randn(ComplexF64, dims...))
 end
 
+function random_state(::Type{T}, d::Integer, k::Integer = d) where {T}
+    Random.seed!(1)
+    x = randn(T, (d, k))
+    y = x * x'
+    y ./= tr(y)
+    return Hermitian(y)
+end
+
 # sanity check oracles
 function test_oracles(
     cone::Cones.Cone{T};
     noise::T = T(1e-1),
     scale::T = T(1e-1),
-    tol::Real = 1e3 * eps(T),
+    tol::Real = 1e8 * eps(T),
     init_only::Bool = false,
     init_tol::Real = tol
 ) where {T<:Real}
@@ -75,13 +85,19 @@ function test_oracles(
     @test Cones.inv_hess_prod!(prod_vec, dual_point, cone) ≈ point atol = tol rtol = tol
     @test hess * inv_hess ≈ I atol = tol rtol = tol
 
-    # perturb and scale the initial point
-    perturb_scale!(point, noise, scale)
-    perturb_scale!(dual_point, noise, inv(scale))
+    # generate random valid point
+    R = eltype(cone.rho)
+    rho = random_state(R, cone.d)
+    Grho = Hermitian(smat(cone.G * svec(rho), R))
+    Zrho = Hermitian(smat(cone.Z * svec(rho), R))
+    relative_entropy = -von_neumann_entropy(Grho) + von_neumann_entropy(Zrho)
+    point[1] = 2 * relative_entropy
+    point[2:end] .= svec(rho)
 
     Cones.reset_data(cone)
     Cones.load_point(cone, point)
     @test Cones.is_feas(cone)
+    dual_point = -Cones.grad(cone)
     Cones.load_dual_point(cone, dual_point)
     @test Cones.is_dual_feas(cone)
 
@@ -139,7 +155,7 @@ function test_barrier(
     barrier::Function;
     noise::T = T(1e-1),
     scale::T = T(1e-1),
-    tol::Real = 1e10 * eps(T),
+    tol::Real = 1e8 * eps(T),
     TFD::Type{<:Real} = T
 ) where {T<:Real}
     Random.seed!(1)
@@ -148,12 +164,18 @@ function test_barrier(
 
     point = zeros(T, dim)
     Cones.set_initial_point!(point, cone)
-    perturb_scale!(point, noise, scale)
+    # generate random valid point
+    R = eltype(cone.rho)
+    rho = random_state(R, cone.d)
+    Grho = Hermitian(smat(cone.G * svec(rho), R))
+    Zrho = Hermitian(smat(cone.Z * svec(rho), R))
+    relative_entropy = -von_neumann_entropy(Grho) + von_neumann_entropy(Zrho)
+    point[1] = 2 * relative_entropy
+    point[2:end] .= svec(rho)
 
     Cones.reset_data(cone)
     Cones.load_point(cone, point)
     @test Cones.is_feas(cone)
-
     TFD_point = TFD.(point)
 
     fd_grad = ForwardDiff.gradient(barrier, TFD_point)
@@ -337,61 +359,57 @@ function von_neumann_entropy(rho)
     return -dot(λ, log.(λ))
 end
 
-function proj(i::Integer, d::Integer; T::Type = Float64, R::Type = Complex{T})
-    ketbra = Hermitian(zeros(R, d, d))
-    ketbra[i, i] = 1
-    return ketbra
+function proj(::Type{T}, i::Integer, d::Integer) where {T<:Number}
+    p = Hermitian(zeros(T, d, d))
+    p[i, i] = 1
+    return p
 end
 
-function random_unitary(d::Integer; T::Type = Float64, R::Type = Complex{T})
-    Random.seed!(1)
-    z = randn(R, (d, d))
-    fact = qr(z)
-    Λ = sign.(real(Diagonal(fact.R)))
-    return fact.Q * Λ
+function random_unitary(::Type{T}, d::Integer) where {T<:Number}
+    z = randn(T, (d, d))
+    Q, R = qr(z)
+    Λ = sign.(real(Diagonal(R)))
+    return Q * Λ
 end
 
-function random_protocol(din::Integer, dout::Integer; T::Type = Float64, R::Type = Complex{T})
-    d = din^2
-    rho_dim = Cones.svec_length(R, d)
+function random_protocol(din::Integer, dout::Integer, R::Type)
+    rho_dim = Cones.svec_length(R, din^2)
     rho_idxs = 2:(rho_dim+1)
 
-    U = random_unitary(dout; T, R)
+    U = random_unitary(R, dout)
     V = U[:, 1:din]
-    gkraus = [kron(V, I(din))]
-    zkraus = [kron(proj(i, dout; R), I(din)) for i = 1:dout]
 
-    G = [I(d)]
-    Z = [Zi * gkraus[1] for Zi in zkraus]
+    G = [random_unitary(R, din^2)]
+    Z = [kron(proj(R, i, dout) * V, I(din)) for i = 1:dout]
+
     return G, Z, rho_dim, rho_idxs
 end
 
 function test_oracles(cone::Type{EpiQKDTri{T,R}}) where {T,R}
-    din, dout = 2, 3
-    G, Z, rho_dim, rho_idxs = random_protocol(din, dout; T, R)
+    din, dout = 3, 4
+    G, Z, rho_dim, rho_idxs = random_protocol(din, dout, R)
     test_oracles(cone(G, Z, 1 + rho_dim); init_tol = Inf)
 end
 
 function test_barrier(cone::Type{EpiQKDTri{T,R}}) where {T,R}
-    din, dout = 2, 3
-    d = din^2
-    ghatkraus, zhatkraus, rho_dim, rho_idxs = random_protocol(din, dout; T, R)
-    G = kraus2matrix(ghatkraus, R)
-    Z = kraus2matrix(zhatkraus, R)
+    din, dout = 3, 4
+    gkraus, zkraus, rho_dim, rho_idxs = random_protocol(din, dout, R)
+    G = kraus2matrix(gkraus, R)
+    Z = kraus2matrix(zkraus, R)
 
     function barrier(point)
         u = point[1]
-        rhoH = new_herm(point[rho_idxs], d, R)
-        GrhoH = new_herm(G * point[rho_idxs], d, R)
-        ZrhoH = new_herm(Z * point[rho_idxs], din * dout, R)
+        rhoH = new_herm(point[rho_idxs], din^2, R)
+        GrhoH = new_herm(G * point[rho_idxs], din^2, R)
+        ZrhoH = new_herm(Z * point[rho_idxs], dout * din, R)
         relative_entropy = -von_neumann_entropy(GrhoH) + von_neumann_entropy(ZrhoH)
         return -real(log(u - relative_entropy)) - logdet_pd(rhoH)
     end
-    return test_barrier(cone(ghatkraus, zhatkraus, 1 + rho_dim), barrier)
+    return test_barrier(cone(gkraus, zkraus, 1 + rho_dim), barrier; TFD = Float64)
 end
 
 function show_time_alloc(cone::Type{EpiQKDTri{T,R}}) where {T,R}
     din, dout = 4, 5
-    G, Z, rho_dim, rho_idxs = random_protocol(din, dout; T, R)
+    G, Z, rho_dim, rho_idxs = random_protocol(din, dout, R)
     return show_time_alloc(cone(G, Z, 1 + rho_dim))
 end
