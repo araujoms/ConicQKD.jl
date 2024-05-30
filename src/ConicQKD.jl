@@ -44,21 +44,28 @@ include("epiqkdtri.jl")
 Here is the QKD Cone
 """
 struct EpiQKDTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
-    Gkraus::Vector
+    Gkraus::VecOrMat
     Zkraus::Vector
     dim::Int
+    blocks::Vector
     use_dual::Bool
+
+    function EpiQKDTriCone{T,R}(
+        Gkraus::VecOrMat,
+        Zkraus::Vector,
+        dim::Int;
+        blocks::Vector = [1:size(Zkraus[1], 1)],
+        use_dual::Bool = false
+    ) where {T<:Real,R<:RealOrComplex{T}}
+        new{T,R}(Gkraus, Zkraus, dim, blocks, use_dual)
+    end
 end
 export EpiQKDTriCone
-
-function EpiQKDTriCone{T,R}(Gkraus::Vector, Zkraus::Vector, dim::Int) where {T<:Real,R<:RealOrComplex{T}}
-    return EpiQKDTriCone{T,R}(Gkraus, Zkraus, dim, false)
-end
 
 MOI.dimension(cone::EpiQKDTriCone) = cone.dim
 
 function Hypatia.cone_from_moi(::Type{T}, cone::EpiQKDTriCone{T,R}) where {T<:Real,R<:RealOrComplex{T}}
-    return EpiQKDTri{T,R}(cone.Gkraus, cone.Zkraus, cone.dim; use_dual = cone.use_dual)
+    return EpiQKDTri{T,R}(cone.Gkraus, cone.Zkraus, cone.dim; blocks = cone.blocks, use_dual = cone.use_dual)
 end
 
 const NewCones{T<:Real} = Union{EpiQKDTriCone{T,T},EpiQKDTriCone{T,Complex{T}}}

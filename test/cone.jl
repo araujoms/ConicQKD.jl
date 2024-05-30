@@ -86,11 +86,11 @@ function test_oracles(
     @test hess * inv_hess ≈ I atol = tol rtol = tol
 
     # generate random valid point
-    R = eltype(cone.rho)
+    R = eltype(cone.ρ)
     rho = random_state(R, cone.d)
     Grho = Hermitian(smat(cone.G * svec(rho), R))
-    Zrho = Hermitian(smat(cone.Z * svec(rho), R))
-    relative_entropy = -von_neumann_entropy(Grho) + von_neumann_entropy(Zrho)
+    Zrho = Hermitian.(smat.(cone.Z .* Ref(svec(rho)), Ref(R)))
+    relative_entropy = -von_neumann_entropy(Grho) + sum(von_neumann_entropy.(Zrho))
     point[1] = 2 * relative_entropy
     point[2:end] .= svec(rho)
 
@@ -165,11 +165,11 @@ function test_barrier(
     point = zeros(T, dim)
     Cones.set_initial_point!(point, cone)
     # generate random valid point
-    R = eltype(cone.rho)
+    R = eltype(cone.ρ)
     rho = random_state(R, cone.d)
     Grho = Hermitian(smat(cone.G * svec(rho), R))
-    Zrho = Hermitian(smat(cone.Z * svec(rho), R))
-    relative_entropy = -von_neumann_entropy(Grho) + von_neumann_entropy(Zrho)
+    Zrho = Hermitian.(smat.(cone.Z .* Ref(svec(rho)), Ref(R)))
+    relative_entropy = -von_neumann_entropy(Grho) + sum(von_neumann_entropy.(Zrho))
     point[1] = 2 * relative_entropy
     point[2:end] .= svec(rho)
 
@@ -382,20 +382,22 @@ function random_protocol(din::Integer, dout::Integer, R::Type)
     G = [random_unitary(R, din^2)]
     Z = [kron(proj(R, i, dout) * V, I(din)) for i = 1:dout]
 
-    return G, Z, rho_dim, rho_idxs
+    blocks = [(i-1)*din+1:i*din for i = 1:dout]
+
+    return G, Z, rho_dim, rho_idxs, blocks
 end
 
 function test_oracles(cone::Type{EpiQKDTri{T,R}}) where {T,R}
     din, dout = 3, 4
-    G, Z, rho_dim, rho_idxs = random_protocol(din, dout, R)
-    test_oracles(cone(G, Z, 1 + rho_dim); init_tol = Inf)
+    G, Z, rho_dim, rho_idxs, blocks = random_protocol(din, dout, R)
+    test_oracles(cone(G, Z, 1 + rho_dim; blocks); init_tol = Inf)
 end
 
 function test_barrier(cone::Type{EpiQKDTri{T,R}}) where {T,R}
     din, dout = 3, 4
-    gkraus, zkraus, rho_dim, rho_idxs = random_protocol(din, dout, R)
-    G = kraus2matrix(gkraus, R)
-    Z = kraus2matrix(zkraus, R)
+    gkraus, zkraus, rho_dim, rho_idxs, blocks = random_protocol(din, dout, R)
+    G = kraus2matrix(gkraus)
+    Z = kraus2matrix(zkraus)
 
     function barrier(point)
         u = point[1]
@@ -405,11 +407,11 @@ function test_barrier(cone::Type{EpiQKDTri{T,R}}) where {T,R}
         relative_entropy = -von_neumann_entropy(GrhoH) + von_neumann_entropy(ZrhoH)
         return -real(log(u - relative_entropy)) - logdet_pd(rhoH)
     end
-    return test_barrier(cone(gkraus, zkraus, 1 + rho_dim), barrier; TFD = Float64)
+    return test_barrier(cone(gkraus, zkraus, 1 + rho_dim; blocks), barrier; TFD = Float64)
 end
 
 function show_time_alloc(cone::Type{EpiQKDTri{T,R}}) where {T,R}
     din, dout = 4, 5
-    G, Z, rho_dim, rho_idxs = random_protocol(din, dout, R)
-    return show_time_alloc(cone(G, Z, 1 + rho_dim))
+    G, Z, rho_dim, rho_idxs, blocks = random_protocol(din, dout, R)
+    return show_time_alloc(cone(G, Z, 1 + rho_dim; blocks))
 end

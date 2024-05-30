@@ -90,7 +90,7 @@ function overlap_rate(::Type{T}, v::Real, d::Integer) where {T}
     end
     bases = bases_full(T, d)
     corr_rho = corr(rho, bases)
-    corr_iso = corr(iso(v, d), bases)
+    corr_iso = corr(isotropic(v, d), bases)
     @constraint(model, corr_rho .== corr_iso)
     @constraint(model, tr(rho) == 1)
     vec_dim = Cones.svec_length(T, d^2)
@@ -104,10 +104,11 @@ function overlap_rate(::Type{T}, v::Real, d::Integer) where {T}
 
     G = [I(d^2)]
     ZG = zgkraus(d)
+    blocks = [(i-1)*d+1:i*d for i=1:d]
 
     @variable(model, h)
     @objective(model, Min, h / log(R(2)))
-    @constraint(model, [h; rho_vec] in EpiQKDTriCone{R,T}(G, ZG, 1 + vec_dim))
+    @constraint(model, [h; rho_vec] in EpiQKDTriCone{R,T}(G, ZG, 1 + vec_dim; blocks))
 
     set_optimizer(model, Hypatia.Optimizer{R})
     set_attribute(model, "verbose", true)
