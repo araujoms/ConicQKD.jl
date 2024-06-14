@@ -6,7 +6,11 @@ import Hypatia
 import Hypatia.Cones
 import JLD2
 
-function numerical_mub(d)
+function analytical_mubs(d)
+    return mub(d)
+end
+
+function numerical_mubs(d)
     mub_dict = JLD2.load("mubs.jld2")
     return mub_dict["mubs"][d]
 end
@@ -25,7 +29,7 @@ end
 
 "Produces a vector of bases corresponding to the probabilities that Alice and Bob get equal outcomes when measuring in bases C and C^T, respectively, where C is one ouf of `n` MUBs of dimension `d`"
 function bases(d::Integer, n::Integer)
-    mub = numerical_mub(d)
+    mub = numerical_mubs(d)
     b = [zeros(ComplexF64, d^2, d^2) for i = 1:n]
     for i = 1:n, j = 1:d
         temp = ketbra(mub[i][:, j])
@@ -41,7 +45,7 @@ corr(rho::AbstractMatrix, bases::AbstractVector) = real(dot.(Ref(rho), bases))
 "Computes the conditional entropy H(A|E) analytically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs.
 
 Note that `d` must be a prime number, and `n` == 2 or `n` == `d` + 1"
-function mub_rate_analytic(v::Real, d::Integer, n::Integer)
+function hae_mub_analytic(v::Real, d::Integer, n::Integer = d + 1)
     Q = 1 - v - (1 - v) / d
     if n == 2
         return log2(d) + Q * log2(Q / (d - 1)) + (1 - Q) * log2(1 - Q)
@@ -55,13 +59,18 @@ function mub_rate_analytic(v::Real, d::Integer, n::Integer)
     end
 end
 
+rate_mub_analytic(v::Real, d::Integer, n::Integer = d + 1) = hae_mub_analytic(v, d, n) - hab_mub(v, d)
+
+rate_mub(::Type{T}, v::Real, d::Integer, n::Integer = d + 1) where {T} = hae_mub(T, v, d, n) - hab_mub(v, d)
+rate_mub(v::Real, d::Integer, n::Integer = d + 1) = rate_mub(ComplexF64, v, d, n)
+
 "Computes the conditional entropy H(A|B) for an isotropic state of dimension `d` with visibility `v`"
-hab(v, d) = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(d - 1)
+hab_mub(v, d) = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(d - 1)
 
 "Computes the conditional entropy H(A|E) numerically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs.
 
 Note that `d` must be a prime number, and 2 ≤ `n` ≤ `d` + 1"
-function mub_rate(::Type{T}, v::Real, d::Integer, n::Integer = d + 1) where {T}
+function hae_mub(::Type{T}, v::Real, d::Integer, n::Integer = d + 1) where {T}
     R = real(T)
     is_complex = (T <: Complex)
     v = R(v)
@@ -87,7 +96,7 @@ function mub_rate(::Type{T}, v::Real, d::Integer, n::Integer = d + 1) where {T}
 
     G = [I(d^2)]
     ZG = zgkraus(d)
-    blocks = [(i-1)*d+1:i*d for i=1:d]
+    blocks = [(i-1)*d+1:i*d for i = 1:d]
 
     @variable(model, h)
     @objective(model, Min, h / log(R(2)))
@@ -97,6 +106,5 @@ function mub_rate(::Type{T}, v::Real, d::Integer, n::Integer = d + 1) where {T}
     set_attribute(model, "verbose", true)
     optimize!(model)
     return objective_value(model)
-    #return solve_time(model)
 end
-mub_rate(v::Real, d::Integer, n::Integer = d + 1) = mub_rate(ComplexF64, v, d, n)
+hae_mub(v::Real, d::Integer, n::Integer = d + 1) = hae_mub(ComplexF64, v, d, n)

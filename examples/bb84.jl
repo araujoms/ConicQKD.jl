@@ -42,12 +42,12 @@ function corr(ρ)
     return real(dot.(Ref(ρ), global_basis))
 end
 
-total_rate_bb84(::Type{T}, qz, qx) where {T} = hae_bb84(T, qz, qx) - hab_bb84(qz, qx)
-total_rate_bb84(qz, qx) = total_rate_bb84(ComplexF64, qz, qx)
+rate_bb84(::Type{T}, qz, qx) where {T} = hae_bb84(T, qz, qx) - hab_bb84(qz, qx)
+rate_bb84(qz, qx) = rate_bb84(Float64, qz, qx)
 
-hae_bb84_analytic(qz, qx) = (1 - binary_entropy(qx))
+hae_bb84_analytic(qz, qx) = 1 - binary_entropy(qx)
 hab_bb84(qz, qx) = binary_entropy(qz)
-total_rate_bb84_analytic(qz, qx) = hae_bb84_analytic(qz, qx) - hab_bb84(qz, qx)
+rate_bb84_analytic(qz, qx) = hae_bb84_analytic(qz, qx) - hab_bb84(qz, qx)
 
 function hae_bb84(::Type{T}, qz::Real, qx::Real) where {T}
     if qx == 0 && qz == 0

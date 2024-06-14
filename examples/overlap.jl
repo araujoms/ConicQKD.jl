@@ -76,9 +76,12 @@ end
 "Computes vector of probabilities of quantum state `rho` in bases `bases`"
 corr(rho::AbstractMatrix, bases::AbstractVector) = real(dot.(Ref(rho), bases))
 
-hab(v, d) = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(d - 1)
+rate_overlap(::Type{T}, v::Real, d::Integer) where {T} = hae_overlap(T, v, d) - hab_overlap(v, d)
+rate_overlap(v::Real, d::Integer) = rate_overlap(Float64, v, d)
 
-function overlap_rate(::Type{T}, v::Real, d::Integer) where {T}
+hab_overlap(v, d) = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(d - 1)
+
+function hae_overlap(::Type{T}, v::Real, d::Integer) where {T}
     R = real(T)
     is_complex = (T <: Complex)
 
@@ -104,7 +107,7 @@ function overlap_rate(::Type{T}, v::Real, d::Integer) where {T}
 
     G = [I(d^2)]
     ZG = zgkraus(d)
-    blocks = [(i-1)*d+1:i*d for i=1:d]
+    blocks = [(i-1)*d+1:i*d for i = 1:d]
 
     @variable(model, h)
     @objective(model, Min, h / log(R(2)))
@@ -114,6 +117,5 @@ function overlap_rate(::Type{T}, v::Real, d::Integer) where {T}
     set_attribute(model, "verbose", true)
     JuMP.optimize!(model)
     return JuMP.objective_value(model)
-    #return JuMP.solve_time(model)
 end
-overlap_rate(v::Real, d::Integer) = overlap_rate(Float64, v, d)
+hae_overlap(v::Real, d::Integer) = hae_overlap(Float64, v, d)
