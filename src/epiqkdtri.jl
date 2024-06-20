@@ -565,23 +565,43 @@ function skron(X)
     return result
 end
 
-function svec(M)
+"""
+    svec(M::AbstractMatrix, ::Type{R})
+
+Produces the scaled vectorized version of a Hermitian matrix `M` with coefficient type `R`. The transformation preserves inner products, i.e., ⟨M,N⟩ = ⟨svec(M,R),svec(N,R)⟩.
+"""
+function svec(M::AbstractMatrix, ::Type{R}) where {R} #the weird stuff here is to make it work with JuMP variables
     d = size(M, 1)
-    R = eltype(M)
     T = real(R)
     vec_dim = Cones.svec_length(R, d)
-    v = Vector{T}(undef, vec_dim)
-    return Cones.smat_to_svec!(v, M, sqrt(T(2)))
+    v = Vector{real(eltype(1 * M))}(undef, vec_dim)
+    if R <: Real
+        Cones.smat_to_svec!(v, 1 * M, sqrt(T(2)))
+    else
+        Cones._smat_to_svec_complex!(v, M, sqrt(T(2)))
+    end
+    return v
 end
+export svec
+"""
+    smat(v::AbstractVector, ::Type{R})
 
-function smat(v, R)
-    T = eltype(v)
-    R = R <: Complex ? Complex{T} : T
+Maps a vector `v` with coefficient type `R` back into a Hermitian matrix M such that svec(M,`R`) = `v`.
+"""
+function smat(v::AbstractVector, ::Type{R}) where {R} #the weird stuff here is to make it work with JuMP variables
     d = Cones.svec_side(R, length(v))
-    M = Matrix{R}(undef, d, d)
-    return Cones.svec_to_smat!(M, v, sqrt(T(2)))
+    T = real(R)
+    matrixeltype = R <: Real ? eltype(1 * v) : typeof(complex(v[1], 0))
+    M = Matrix{matrixeltype}(undef, d, d)
+    if R <: Real
+        Cones.svec_to_smat!(M, 1 * v, sqrt(T(2)))
+    else
+        Cones._svec_to_smat_complex!(M, v, sqrt(T(2)))
+    end
+    LinearAlgebra.copytri!(M, 'U', true)
+    return Hermitian(M)
 end
-
+export smat
 """
 Computes `skr` such that `skr*svec(x) = svec(mat*x*mat')` for real `mat` and Hermitian `x`
 """

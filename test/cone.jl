@@ -88,11 +88,11 @@ function test_oracles(
     # generate random valid point
     R = eltype(cone.ρ)
     rho = random_state(R, cone.d)
-    Grho = Hermitian(smat(cone.G * svec(rho), R))
-    Zrho = Hermitian.(smat.(cone.Z .* Ref(svec(rho)), Ref(R)))
+    Grho = smat(cone.G * svec(rho, R), R)
+    Zrho = smat.(cone.Z .* Ref(svec(rho, R)), Ref(R))
     relative_entropy = -von_neumann_entropy(Grho) + sum(von_neumann_entropy.(Zrho))
     point[1] = 2 * relative_entropy
-    point[2:end] .= svec(rho)
+    point[2:end] .= svec(rho, R)
 
     Cones.reset_data(cone)
     Cones.load_point(cone, point)
@@ -167,11 +167,11 @@ function test_barrier(
     # generate random valid point
     R = eltype(cone.ρ)
     rho = random_state(R, cone.d)
-    Grho = Hermitian(smat(cone.G * svec(rho), R))
-    Zrho = Hermitian.(smat.(cone.Z .* Ref(svec(rho)), Ref(R)))
+    Grho = smat(cone.G * svec(rho, R), R)
+    Zrho = smat.(cone.Z .* Ref(svec(rho, R)), Ref(R))
     relative_entropy = -von_neumann_entropy(Grho) + sum(von_neumann_entropy.(Zrho))
     point[1] = 2 * relative_entropy
-    point[2:end] .= svec(rho)
+    point[2:end] .= svec(rho, R)
 
     Cones.reset_data(cone)
     Cones.load_point(cone, point)
@@ -290,69 +290,6 @@ end
 
 logdet_pd(W::Hermitian) = logdet(cholesky!(copy(W)))
 
-new_vec(w::Vector, dw::Int, T::Type{<:Real}) = copy(w)
-
-function new_vec(w::Vector, dw::Int, R::Type{Complex{T}}) where {T<:Real}
-    wR = zeros(Complex{eltype(w)}, dw)
-    Cones.vec_copyto!(wR, w)
-    return wR
-end
-
-function new_herm(w::Vector, dW::Int, T::Type{<:Real})
-    W = similar(w, dW, dW)
-    Cones.svec_to_smat!(W, w, sqrt(T(2)))
-    return Hermitian(W, :U)
-end
-
-function new_herm(w::Vector, dW::Int, R::Type{Complex{T}}) where {T<:Real}
-    W = zeros(Complex{eltype(w)}, dW, dW)
-    Cones.svec_to_smat!(W, w, sqrt(T(2)))
-    return Hermitian(W, :U)
-end
-
-function rand_sppsd_pattern(dW::Int)
-    sparsity = inv(sqrt(dW))
-    (row_idxs, col_idxs, _) = findnz(tril!(sprand(Bool, dW, dW, sparsity)) + I)
-    return (row_idxs, col_idxs)
-end
-
-function rand_herms(ds::Int, Rd::Vector, T::Type{<:Real})
-    Ps = Vector{LinearAlgebra.HermOrSym{R,Matrix{R}} where {R<:RealOrComplex{T}}}(undef, length(Rd))
-    A_1_half = randn(Rd[1], ds, ds)
-    Ps[1] = Hermitian(A_1_half * A_1_half' + I, :U)
-    for i = 2:length(Rd)
-        Ps[i] = Hermitian(randn(Rd[i], ds, ds), :U)
-    end
-    return Ps
-end
-
-function rand_powers(T, d)
-    Random.seed!(1)
-    α = rand(T, d) .+ 1
-    α ./= sum(α)
-    return α
-end
-
-# real Ps for WSOS cones, use unit box domain
-function rand_interp(num_vars::Int, halfdeg::Int, T::Type{<:Real})
-    Random.seed!(1)
-    domain = PolyUtils.BoxDomain{T}(-ones(T, num_vars), ones(T, num_vars))
-    (d, _, Ps, _) = PolyUtils.interpolate(domain, halfdeg; sample = false)
-    return (d, Ps)
-end
-
-# complex Ps for WSOS cones, use unit ball domain
-function rand_interp(num_vars::Int, halfdeg::Int, R::Type{<:Complex{<:Real}})
-    Random.seed!(1)
-    gs = [z -> 1 - sum(abs2, z)]
-    g_halfdegs = [1]
-    (points, Ps) = PolyUtils.interpolate(R, halfdeg, num_vars, gs, g_halfdegs)
-    d = length(points)
-    return (d, Ps)
-end
-
-# cones
-
 # EpiQKDTri
 function von_neumann_entropy(rho)
     λ = eigvals(rho)
@@ -401,9 +338,9 @@ function test_barrier(cone::Type{EpiQKDTri{T,R}}) where {T,R}
 
     function barrier(point)
         u = point[1]
-        rhoH = new_herm(point[rho_idxs], din^2, R)
-        GrhoH = new_herm(G * point[rho_idxs], din^2, R)
-        ZrhoH = new_herm(Z * point[rho_idxs], dout * din, R)
+        rhoH = smat(point[rho_idxs], R)
+        GrhoH = smat(G * point[rho_idxs], R)
+        ZrhoH = smat(Z * point[rho_idxs], R)
         relative_entropy = -von_neumann_entropy(GrhoH) + von_neumann_entropy(ZrhoH)
         return -real(log(u - relative_entropy)) - logdet_pd(rhoH)
     end
