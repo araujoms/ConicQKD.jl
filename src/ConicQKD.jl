@@ -28,9 +28,6 @@ import Hypatia.Cones:
 import Hypatia.Cones:
     svec_side, svec_to_smat!, smat_to_svec!, spectral_outer!, Δ2!, Δ3!, eig_dot_kron!, alloc_hess!, symm_kron!, is_feas
 
-using DocStringExtensions
-
-using SparseArrays
 import MathOptInterface
 const MOI = MathOptInterface
 const VI = MOI.VariableIndex
@@ -41,7 +38,9 @@ const VAF = MOI.VectorAffineFunction
 include("epiqkdtri.jl")
 
 """
-Here is the QKD Cone
+    EpiQKDTriCone{T,R}(Gkraus::VecOrMat, Zkraus::Vector, dim::Int; blocks::Vector, use_dual::Bool)
+
+QKD cone with number of real parameters `dim`. The cone is parametrized by the CP maps G and Z, given as vectors of Kraus operators `Gkraus` and `Zkraus`. `blocks` is an optional argument describing the block structure of Z as a vector of vectors. `use_dual` is an optional argument to optimize over the dual cone instead.
 """
 struct EpiQKDTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
     Gkraus::VecOrMat

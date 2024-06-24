@@ -6,10 +6,8 @@ import Hypatia
 import Hypatia.Cones
 import JLD2
 
-function analytical_mubs(d)
-    return mub(d)
-end
-
+"Produces a vector of `d` + 1 numerical MUBs for 2 ≤ `d` ≤ 13. For `d` = 6, 10, 12 the bases are
+only roughly unbiased."
 function numerical_mubs(d)
     mub_dict = JLD2.load("mubs.jld2")
     return mub_dict["mubs"][d]
@@ -27,84 +25,80 @@ function zgkraus(d::Integer)
     return K
 end
 
-"Produces a vector of bases corresponding to the probabilities that Alice and Bob get equal outcomes when measuring in bases C and C^T, respectively, where C is one ouf of `n` MUBs of dimension `d`"
-function bases(d::Integer, n::Integer)
-    mub = numerical_mubs(d)
-    b = [zeros(ComplexF64, d^2, d^2) for i = 1:n]
+"Computes a vector of probabilities that Alice and Bob get equal outcomes when measuring in bases C and C^T, respectively, where C is one ouf of `n` MUBs of dimension `d`"
+function corr(::Type{T}, rho::AbstractMatrix, d::Integer, n::Integer, kind::String) where {T}
+    if kind == "numerical"
+        mubs = numerical_mubs(d)
+    elseif kind == "analytical"
+        mubs = mub(Complex{T}, d) # analytical MUBs from the package Ket
+    else
+        error("Unsupported kind.")
+    end
+    if T != Float64 && kind == "numerical"
+        @warn "To achieve higher precision analytical MUBs are needed."
+    end
+    b = [zeros(Complex{T}, d^2, d^2) for i = 1:n]
     for i = 1:n, j = 1:d
-        temp = ketbra(mub[i][:, j])
+        temp = ketbra(mubs[i][:, j])
         b[i] += kron(temp, transpose(temp))
     end
     cleanup!.(b)
-    return Hermitian.(b)
+    b = Hermitian.(b)
+    return real(dot.(Ref(rho), b))
 end
 
-"Computes vector of probabilities of quantum state `rho` in bases `bases`"
-corr(rho::AbstractMatrix, bases::AbstractVector) = real(dot.(Ref(rho), bases))
-
-"Computes the conditional entropy H(A|E) analytically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs.
-
-Note that `d` must be a prime number, and `n` == 2 or `n` == `d` + 1"
-function hae_mub_analytic(v::Real, d::Integer, n::Integer = d + 1)
+"Computes the conditional entropy H(A|E) analytically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs. `d` must be a prime number, and `n` == 2 or `n` == `d` + 1"
+function hae_mub_analytic(v::T, d::Integer, n::Integer = d + 1) where {T<:Real}
     Q = 1 - v - (1 - v) / d
     if n == 2
-        return log2(d) + Q * log2(Q / (d - 1)) + (1 - Q) * log2(1 - Q)
+        return log2(T(d)) + Q * log2(Q / (d - 1)) + (1 - Q) * log2(1 - Q)
     elseif n == d + 1
-        return log2(d) +
+        return log2(T(d)) +
                (1 - (d + 1) * Q / d) * (log2(1 - Q - Q / d) - log2(1 - Q)) +
                (Q / d) * (log2(Q / (d^2 - d)) - log2(1 - Q)) +
-               Q * log2(1 / d)
+               Q * log2(T(1) / d)
     else
-        error("n must be either 2 or d+1")
+        throw(ArgumentError("Number of MUBs must be either 2 or $(d+1), got $n."))
     end
 end
 
 rate_mub_analytic(v::Real, d::Integer, n::Integer = d + 1) = hae_mub_analytic(v, d, n) - hab_mub(v, d)
 
-rate_mub(::Type{T}, v::Real, d::Integer, n::Integer = d + 1) where {T} = hae_mub(T, v, d, n) - hab_mub(v, d)
-rate_mub(v::Real, d::Integer, n::Integer = d + 1) = rate_mub(ComplexF64, v, d, n)
-
 "Computes the conditional entropy H(A|B) for an isotropic state of dimension `d` with visibility `v`"
-hab_mub(v, d) = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(d - 1)
+hab_mub(v::T, d) where {T} = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(T(d) - 1)
 
-"Computes the conditional entropy H(A|E) numerically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs.
-
-Note that `d` must be a prime number, and 2 ≤ `n` ≤ `d` + 1"
-function hae_mub(::Type{T}, v::Real, d::Integer, n::Integer = d + 1) where {T}
-    R = real(T)
-    is_complex = (T <: Complex)
-    v = R(v)
-    model = GenericModel{R}()
+"Computes the conditional entropy H(A|E) numerically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs. `n` must respect 2 ≤ `n` ≤ `d` + 1"
+function hae_mub(v::T, d::Integer, n::Integer = d + 1) where {T<:Real}
+    is_complex = true
+    model = GenericModel{T}()
     if is_complex
-        @variable(model, rho[1:d^2, 1:d^2], Hermitian)
+        @variable(model, ρ[1:d^2, 1:d^2], Hermitian)
+        R = Complex{T}
     else
-        @variable(model, rho[1:d^2, 1:d^2], Symmetric)
+        @variable(model, ρ[1:d^2, 1:d^2], Symmetric)
+        R = T
     end
-    corr_rho = corr(rho, bases(d, n))
+    corr_ρ = corr(T, ρ, d, n, "numerical")
     W = v + (1 - v) / d
     corr_iso = W * ones(n)
-    @constraint(model, corr_rho .== corr_iso)
-    @constraint(model, tr(rho) == 1)
-    vec_dim = Cones.svec_length(T, d^2)
-    rho_vec = Vector{GenericAffExpr{R,GenericVariableRef{R}}}(undef, vec_dim)
+    @constraint(model, corr_ρ .== corr_iso)
+    @constraint(model, tr(ρ) == 1)
 
-    if is_complex
-        Cones._smat_to_svec_complex!(rho_vec, T(1) * rho, sqrt(R(2)))
-    else
-        Cones.smat_to_svec!(rho_vec, T(1) * rho, sqrt(R(2)))
-    end
+    vec_dim = Cones.svec_length(R, d^2)
+    ρ_vec = svec(ρ, R)
 
-    G = [I(d^2)]
-    ZG = zgkraus(d)
+    Ghat = [I(d^2)]
+    Zhat = zgkraus(d)
     blocks = [(i-1)*d+1:i*d for i = 1:d]
 
     @variable(model, h)
-    @objective(model, Min, h / log(R(2)))
-    @constraint(model, [h; rho_vec] in EpiQKDTriCone{R,T}(G, ZG, 1 + vec_dim; blocks))
+    @objective(model, Min, h / log(T(2)))
+    @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhat, 1 + vec_dim; blocks))
 
-    set_optimizer(model, Hypatia.Optimizer{R})
+    set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
     optimize!(model)
     return objective_value(model)
 end
-hae_mub(v::Real, d::Integer, n::Integer = d + 1) = hae_mub(ComplexF64, v, d, n)
+
+rate_mub(v::T, d::Integer, n::Integer = d + 1) where {T<:Real} = hae_mub(v, d, n) - hab_mub(v, d)

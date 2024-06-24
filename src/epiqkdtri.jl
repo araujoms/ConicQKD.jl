@@ -1,10 +1,3 @@
-"""
-$(TYPEDEF)
-
-Epigraph of QKD cone of dimension `dim` in svec format.
-
-    $(FUNCTIONNAME){T}(Gkraus::VecOrMat, Zkraus::Vector, dim::Int; blocks::Vector, use_dual::Bool = false)
-"""
 mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     use_dual_barrier::Bool
     dim::Int
