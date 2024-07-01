@@ -6,11 +6,7 @@ Implementation of the QKD cone introduced in the paper
 
 ## Installation
 
-First you need to install [Julia](https://docs.julialang.org/en/v1/manual/getting-started/). From within Julia, enter the package manager by typing `]`. Then install the unregistered package Ket:
-```julia
-pkg> add https://github.com/araujoms/Ket.jl
-```
-Followed by ConicQKD itself:
+First you need to install [Julia](https://docs.julialang.org/en/v1/manual/getting-started/). From within Julia, enter the package manager by typing `]`. Then install ConicQKD:
 ```julia
 pkg> add https://github.com/araujoms/ConicQKD.jl
 ```
