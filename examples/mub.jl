@@ -26,15 +26,19 @@ function zgkraus(d::Integer)
 end
 
 "Computes a vector of probabilities that Alice and Bob get equal outcomes when measuring in bases C and C^T, respectively, where C is one ouf of `n` MUBs of dimension `d`"
-function corr(::Type{T}, rho::AbstractMatrix, d::Integer, n::Integer, kind::String) where {T}
-    if kind == "numerical"
-        mubs = numerical_mubs(d)
-    elseif kind == "analytical"
+function corr(
+    ::Type{T},
+    rho::AbstractMatrix,
+    d::Integer,
+    n::Integer;
+    analytical_mub::Bool = false
+) where {T<:AbstractFloat}
+    if analytical_mub
         mubs = mub(Complex{T}, d) # analytical MUBs from the package Ket
     else
-        error("Unsupported kind.")
+        mubs = numerical_mubs(d)
     end
-    if T != Float64 && kind == "numerical"
+    if T != Float64 && !analytical_mub
         @warn "To achieve higher precision analytical MUBs are needed."
     end
     b = [zeros(Complex{T}, d^2, d^2) for i = 1:n]
@@ -48,7 +52,7 @@ function corr(::Type{T}, rho::AbstractMatrix, d::Integer, n::Integer, kind::Stri
 end
 
 "Computes the conditional entropy H(A|E) analytically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs. `d` must be a prime number, and `n` == 2 or `n` == `d` + 1"
-function hae_mub_analytic(v::T, d::Integer, n::Integer = d + 1) where {T<:Real}
+function hae_mub_analytic(v::T, d::Integer, n::Integer = d + 1) where {T<:AbstractFloat}
     Q = 1 - v - (1 - v) / d
     if n == 2
         return log2(T(d)) + Q * log2(Q / (d - 1)) + (1 - Q) * log2(1 - Q)
@@ -65,10 +69,10 @@ end
 rate_mub_analytic(v::Real, d::Integer, n::Integer = d + 1) = hae_mub_analytic(v, d, n) - hab_mub(v, d)
 
 "Computes the conditional entropy H(A|B) for an isotropic state of dimension `d` with visibility `v`"
-hab_mub(v::T, d) where {T} = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(T(d) - 1)
+hab_mub(v::T, d) where {T<:AbstractFloat} = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(T(d) - 1)
 
-"Computes the conditional entropy H(A|E) numerically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs. `n` must respect 2 ≤ `n` ≤ `d` + 1"
-function hae_mub(v::T, d::Integer, n::Integer = d + 1) where {T<:Real}
+"Computes the conditional entropy H(A|E) numerically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs. `n` must respect 2 ≤ `n` ≤ `d` + 1. `analytical_mub` specifies whether the MUBs are analytical or numerical."
+function hae_mub(v::T, d::Integer, n::Integer = d + 1; analytical_mub::Bool) where {T<:AbstractFloat}
     is_complex = true
     model = GenericModel{T}()
     if is_complex
@@ -78,7 +82,7 @@ function hae_mub(v::T, d::Integer, n::Integer = d + 1) where {T<:Real}
         @variable(model, ρ[1:d^2, 1:d^2], Symmetric)
         R = T
     end
-    corr_ρ = corr(T, ρ, d, n, "numerical")
+    corr_ρ = corr(T, ρ, d, n; analytical_mub)
     W = v + (1 - v) / d
     corr_iso = W * ones(n)
     @constraint(model, corr_ρ .== corr_iso)
@@ -101,4 +105,5 @@ function hae_mub(v::T, d::Integer, n::Integer = d + 1) where {T<:Real}
     return objective_value(model)
 end
 
-rate_mub(v::T, d::Integer, n::Integer = d + 1) where {T<:Real} = hae_mub(v, d, n) - hab_mub(v, d)
+rate_mub(v::T, d::Integer, n::Integer = d + 1; analytical_mub::Bool = false) where {T<:AbstractFloat} =
+    hae_mub(v, d, n; analytical_mub) - hab_mub(v, d)

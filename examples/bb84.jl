@@ -25,7 +25,7 @@ function corr(ρ)
     return real(dot.(Ref(ρ), global_basis))
 end
 
-function hae_bb84_general(qz::T, qx::T) where {T<:Real}
+function hae_bb84_general(qz::T, qx::T) where {T<:AbstractFloat}
     model = GenericModel{T}()
     dim_ρ = 4
     @variable(model, ρ[1:dim_ρ, 1:dim_ρ], Symmetric)
@@ -53,7 +53,7 @@ end
 isometryz(::Type{T}) where {T} = [[1, 0, 0, 1] [1, 0, 0, -1]] / sqrt(T(2))
 #isometryz2() = [[1,0,0,0] [0,0,0,1]]
 
-function hae_bb84_reducedz(qx::T) where {T<:Real}
+function hae_bb84_reducedz(qx::T) where {T<:AbstractFloat}
     model = GenericModel{T}()
     dim_ρ = 2
     @variable(model, ρ[1:dim_ρ, 1:dim_ρ], Symmetric)
@@ -79,10 +79,10 @@ function hae_bb84_reducedz(qx::T) where {T<:Real}
     return objective_value(model)
 end
 
-isometryx(::Type{T}) where {T} = [[1, 0, 0, 1] [0, 1, 1, 0]] / sqrt(T(2))
+isometryx(::Type{T}) where {T<:AbstractFloat} = [[1, 0, 0, 1] [0, 1, 1, 0]] / sqrt(T(2))
 #isometryx2() = 0.5 * [[1,1,1,1] [1,-1,-1,1]]
 
-function hae_bb84_reducedx(qz::T) where {T<:Real}
+function hae_bb84_reducedx(qz::T) where {T<:AbstractFloat}
     model = GenericModel{T}()
     dim_ρ = 2
     @variable(model, ρ[1:dim_ρ, 1:dim_ρ], Symmetric)

@@ -10,7 +10,7 @@ First you need to install [Julia](https://docs.julialang.org/en/v1/manual/gettin
 ```julia
 pkg> add https://github.com/araujoms/ConicQKD.jl
 ```
-This will automatically install all other dependencies. The main one is the solver [Hypatia](https://github.com/jump-dev/Hypatia.jl), which this package extends.
+This will automatically install other dependencies. The main one is the solver [Hypatia](https://github.com/jump-dev/Hypatia.jl), which this package extends.
 ## Usage
 
 Several examples are available in the `examples` folder. They are all formulated using the modeller [JuMP](https://jump.dev/JuMP.jl/stable/tutorials/getting_started/getting_started_with_JuMP/). To constraint a quantum state `ρ` to belong to the QKD cone with CP maps `Ghat` and `Zhat` the syntax is

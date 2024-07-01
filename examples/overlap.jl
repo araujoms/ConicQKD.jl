@@ -76,46 +76,32 @@ end
 "Computes vector of probabilities of quantum state `rho` in bases `bases`"
 corr(rho::AbstractMatrix, bases::AbstractVector) = real(dot.(Ref(rho), bases))
 
-rate_overlap(::Type{T}, v::Real, d::Integer) where {T} = hae_overlap(T, v, d) - hab_overlap(v, d)
-rate_overlap(v::Real, d::Integer) = rate_overlap(Float64, v, d)
+hab_overlap(v::T, d) where {T<:AbstractFloat} = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(T(d) - 1)
 
-hab_overlap(v, d) = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(d - 1)
-
-function hae_overlap(::Type{T}, v::Real, d::Integer) where {T}
-    R = real(T)
-    is_complex = (T <: Complex)
-
-    model = GenericModel{R}()
-    if is_complex
-        @variable(model, rho[1:d^2, 1:d^2], Hermitian)
-    else
-        @variable(model, rho[1:d^2, 1:d^2], Symmetric)
-    end
+function hae_overlap(v::T, d::Integer) where {T<:AbstractFloat}
+    model = GenericModel{T}()
+    @variable(model, rho[1:d^2, 1:d^2], Symmetric)
     bases = bases_full(T, d)
     corr_rho = corr(rho, bases)
     corr_iso = corr(isotropic(v, d), bases)
     @constraint(model, corr_rho .== corr_iso)
     @constraint(model, tr(rho) == 1)
+
     vec_dim = Cones.svec_length(T, d^2)
-    rho_vec = Vector{GenericAffExpr{R,GenericVariableRef{R}}}(undef, vec_dim)
+    rho_vec = svec(rho, T)
 
-    if is_complex
-        Cones._smat_to_svec_complex!(rho_vec, T(1) * rho, sqrt(R(2)))
-    else
-        Cones.smat_to_svec!(rho_vec, T(1) * rho, sqrt(R(2)))
-    end
-
-    G = [I(d^2)]
-    ZG = zgkraus(d)
+    Ghat = [I(d^2)]
+    Zhat = zgkraus(d)
     blocks = [(i-1)*d+1:i*d for i = 1:d]
 
     @variable(model, h)
-    @objective(model, Min, h / log(R(2)))
-    @constraint(model, [h; rho_vec] in EpiQKDTriCone{R,T}(G, ZG, 1 + vec_dim; blocks))
+    @objective(model, Min, h / log(T(2)))
+    @constraint(model, [h; rho_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim; blocks))
 
-    set_optimizer(model, Hypatia.Optimizer{R})
+    set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
     JuMP.optimize!(model)
     return JuMP.objective_value(model)
 end
-hae_overlap(v::Real, d::Integer) = hae_overlap(Float64, v, d)
+
+rate_overlap(v::T, d::Integer) where {T<:AbstractFloat} = hae_overlap(v, d) - hab_overlap(v, d)

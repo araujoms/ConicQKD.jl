@@ -25,7 +25,7 @@ function integrate(bounds, pars)
     return sol.u
 end
 
-function joint_probability(L::T, ξ::T, α::T) where {T<:Real}
+function joint_probability(L::T, ξ::T, α::T) where {T<:AbstractFloat}
     η = 10^(-2 * L / 100)
     pAB = zeros(T, 4, 4)
     for x = 0:3
@@ -39,13 +39,13 @@ function joint_probability(L::T, ξ::T, α::T) where {T<:Real}
     return pAB
 end
 
-function hba_dmcv(L::T, ξ::T, α::T) where {T<:Real}
+function hba_dmcv(L::T, ξ::T, α::T) where {T<:AbstractFloat}
     pAB = joint_probability(L, ξ, α)
     pBA = transpose(pAB)
     return conditional_entropy(pBA)
 end
 
-function hbe_dmcv_analytic(L::T, α::T) where {T<:Real}
+function hbe_dmcv_analytic(L::T, α::T) where {T<:AbstractFloat}
     η = 10^(-2 * L / 100)
     c =
         exp(-(1 - η) * α^2 / 2) / sqrt(T(2)) * [
@@ -75,15 +75,15 @@ function simulated_expectations(L::T, ξ::T, α::T) where {T<:Real}
     return exp_sim
 end
 
-function alice_part(α::Real)
-    ρ = zeros(Complex{typeof(α)}, 4, 4)
+function alice_part(α::T) where {T<:Real}
+    ρ = zeros(Complex{T}, 4, 4)
     for j = 0:3, i = 0:j
         ρ[i+1, j+1] = 0.25 * exp(-α^2 * (1 - (1.0 * im)^(i - j)))
     end
     return Hermitian(ρ)
 end
 
-function sinkpi4(::Type{T}, k::Integer) where {T} #computes sin(k*π/4) with high precision
+function sinkpi4(::Type{T}, k::Integer) where {T<:Real} #computes sin(k*π/4) with high precision
     if mod(k, 4) == 0
         return T(0)
     else
@@ -96,7 +96,7 @@ function sinkpi4(::Type{T}, k::Integer) where {T} #computes sin(k*π/4) with hig
     end
 end
 
-function region_operators(::Type{T}, Nc::Integer) where {T}
+function region_operators(::Type{T}, Nc::Integer) where {T<:Real}
     R = [Hermitian(zeros(Complex{T}, Nc + 1, Nc + 1)) for z = 0:3]
     for z = 0:2
         for n = 0:Nc
@@ -115,14 +115,14 @@ function region_operators(::Type{T}, Nc::Integer) where {T}
     return R
 end
 
-function annihilation_operator(::Type{T}, Nc::Integer) where {T}
+function annihilation_operator(::Type{T}, Nc::Integer) where {T<:Real}
     dl = zeros(T, Nc)
     d = zeros(T, Nc + 1)
     du = sqrt.(T.(1:Nc))
     return Tridiagonal(dl, d, du)
 end
 
-function heterodyne_operators(::Type{T}, Nc::Integer) where {T}
+function heterodyne_operators(::Type{T}, Nc::Integer) where {T<:Real}
     a = annihilation_operator(T, Nc)
     q = (a' + a) / sqrt(T(2))
     p = im * (a' - a) / sqrt(T(2))
@@ -131,7 +131,7 @@ function heterodyne_operators(::Type{T}, Nc::Integer) where {T}
     return [q, p, n, d]
 end
 
-function constraint_expectations(::Type{T}, ρ::AbstractMatrix, Nc::Integer) where {T}
+function constraint_expectations(::Type{T}, ρ::AbstractMatrix, Nc::Integer) where {T<:Real}
     ops = heterodyne_operators(T, Nc)
     bases_AB = [kron(proj(x + 1, 4), ops[z+1]) for x = 0:3, z = 0:3]
     return real(dot.(Ref(ρ), bases_AB))
@@ -142,14 +142,14 @@ function gmap(::Type{T}, ρ::AbstractMatrix, Nc::Integer) where {T}
     return Hermitian(V * ρ * V')
 end
 
-function gkraus(::Type{T}, Nc::Integer) where {T}
+function gkraus(::Type{T}, Nc::Integer) where {T<:Real}
     sqrtbasis = sqrt.(region_operators(T, Nc))
     #    cleanup!.(sqrtbasis;tol=10^3*eps(T))
     V = sum(kron(I(4), sqrtbasis[i], ket(i, 4)) for i = 1:4)
     return V
 end
 
-function zmap(ρ::AbstractMatrix, Nc::Integer, T::DataType = Float64)
+function zmap(ρ::AbstractMatrix, Nc::Integer)
     K = zkraus(Nc)
     return Hermitian(sum(K[i] * ρ * K[i] for i = 1:4))
 end
@@ -159,7 +159,7 @@ function zkraus(Nc::Integer)
     return K
 end
 
-function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T) where {T<:Real}
+function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFloat}
     dim_ρAB = 4 * (Nc + 1)
     model = GenericModel{T}()
     @variable(model, ρAB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
@@ -196,7 +196,7 @@ end
 
 coherent(Nc::Integer, β::Number) = exp(-abs2(β) / 2) * [β^n / sqrt(factorial(n)) for n = 0:Nc]
 isometry(Nc::Integer, α::Real) = sum(kron(ket(x + 1, 4), coherent(Nc, im^x * α)) * ket(x + 1, 4)' for x = 0:3)
-function hbe_dmcv_reduced(Nc::Integer, L::T, α::T) where {T<:Real}
+function hbe_dmcv_reduced(Nc::Integer, L::T, α::T) where {T<:AbstractFloat}
     dim_σAB = 4
     model = GenericModel{T}()
 
@@ -237,7 +237,7 @@ function hbe_dmcv_reduced(Nc::Integer, L::T, α::T) where {T<:Real}
     return solve_time(model)
 end
 
-function hbe_dmcv(Nc::Integer, L::T, ξ::T, α::T) where {T<:Real}
+function hbe_dmcv(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFloat}
     if ξ == 0
         return hbe_dmcv_reduced(Nc, L, α)
     else
@@ -246,11 +246,11 @@ function hbe_dmcv(Nc::Integer, L::T, ξ::T, α::T) where {T<:Real}
 end
 hbe_dmcv(Nc::Integer) = hbe_dmcv(Nc, 60.0, 0.05, 0.35)
 
-function rate_dmcv_analytic(L::T, ξ::T, α::T) where {T<:Real}
+function rate_dmcv_analytic(L::T, ξ::T, α::T) where {T<:AbstractFloat}
     return hbe_dmcv_analytic(L, α) - hba_dmcv(L, ξ, α)
 end
 
-function rate_dmcv(Nc::Integer, L::T, ξ::T, α::T) where {T<:Real}
+function rate_dmcv(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFloat}
     return hbe_dmcv(Nc, L, ξ, α) - hba_dmcv(L, ξ, α)
 end
 
