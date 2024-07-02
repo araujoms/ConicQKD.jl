@@ -1,7 +1,7 @@
 # ConicQKD
 Implementation of the QKD cone introduced in the paper
 
-### Quantum key distribution rates from non-symmetric conic optimization
+### [Quantum key distribution rates from non-symmetric conic optimization](http://arxiv.org/abs/2407.00152)
 #### Andrés González Lorente, Pablo V. Parellada, Miguel Castillo-Celeita, and Mateus Araújo
 
 ## Installation
