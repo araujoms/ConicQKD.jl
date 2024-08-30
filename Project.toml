@@ -14,7 +14,7 @@ MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 [compat]
 Hypatia = "0.8.1"
 JuMP = "1.22"
-Ket = "0.1"
+Ket = "0.1 - 0.2"
 julia = "1.9"
 
 [extras]
