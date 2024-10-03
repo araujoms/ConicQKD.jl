@@ -18,7 +18,7 @@ import Hypatia.Cones:
     update_feas,
     update_grad,
     update_hess_aux,
-    update_hess,
+    inv_hess_prod!,
     hess_prod!,
     use_dder3,
     update_dder3_aux,
@@ -43,17 +43,17 @@ include("epiqkdtri.jl")
 QKD cone with number of real parameters `dim`. The cone is parametrized by the CP maps G and Z, given as vectors of Kraus operators `Gkraus` and `Zkraus`. `blocks` is an optional argument describing the block structure of Z as a vector of vectors. `use_dual` is an optional argument to optimize over the dual cone instead.
 """
 struct EpiQKDTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
-    Gkraus::VecOrMat
-    Zkraus::Vector
+    Gkraus::Vector{<:AbstractMatrix}
+    Zkraus::Vector{<:AbstractMatrix}
     dim::Int
-    blocks::Vector
+    blocks::Vector{<:AbstractVector}
     use_dual::Bool
 
     function EpiQKDTriCone{T,R}(
-        Gkraus::VecOrMat,
-        Zkraus::Vector,
+        Gkraus::Vector{<:AbstractMatrix},
+        Zkraus::Vector{<:AbstractMatrix},
         dim::Int;
-        blocks::Vector = [1:size(Zkraus[1], 1)],
+        blocks::Vector{<:AbstractVector} = [1:size(Zkraus[1], 1)],
         use_dual::Bool = false
     ) where {T<:Real,R<:RealOrComplex{T}}
         new{T,R}(Gkraus, Zkraus, dim, blocks, use_dual)
