@@ -1,6 +1,6 @@
 name = "ConicQKD"
 uuid = "89930fff-1c97-468e-be5c-77ab6ddad2d9"
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"

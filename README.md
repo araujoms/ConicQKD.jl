@@ -4,6 +4,8 @@ Implementation of the QKD cone introduced in the paper
 ### [Quantum key distribution rates from non-symmetric conic optimization](http://arxiv.org/abs/2407.00152)
 #### Andrés González Lorente, Pablo V. Parellada, Miguel Castillo-Celeita, and Mateus Araújo
 
+Version 0.2 incorporates an optimized technique to compute the inverse Hessian from the appendix B.2 of [Exploiting Structure in Quantum Relative Entropy Programs](https://arxiv.org/abs/2407.00241), by Kerry He, James Saunderson, and Hamza Fawzi.
+
 ## Installation
 
 First you need to install [Julia](https://docs.julialang.org/en/v1/manual/getting-started/). From within Julia, enter the package manager by typing `]`. Then install ConicQKD:
