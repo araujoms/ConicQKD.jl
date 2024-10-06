@@ -135,6 +135,8 @@ function reset_data(cone::EpiQKDTri)
     )
 end
 
+use_sqrt_hess_oracles(::Int, cone::EpiQKDTri) = false
+
 function setup_extra_data!(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     d = cone.d
     Gd = cone.Gd

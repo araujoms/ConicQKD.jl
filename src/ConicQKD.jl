@@ -12,6 +12,7 @@ import Hypatia.Cones.Cone
 #these functions are imported in order to extend them
 import Hypatia.Cones:
     reset_data,
+    use_sqrt_hess_oracles,
     setup_extra_data!,
     get_nu,
     set_initial_point!,
