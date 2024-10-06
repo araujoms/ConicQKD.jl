@@ -473,13 +473,21 @@ function update_inv_hess_aux(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrCompl
         end
 
     else
-        Gρ_U_adj_Gk = [Gρ_U' * Gki for Gki in Gk]
-        hessian_spectral_function!(d2zdρ2, cone.Δ2G, Gρ_U_adj_Gk, cone.Gmat, cone.Gmat2, cone.Gρmat, cone.mat, rt2)
+        if length(Gk) == 1
+            Gρ_U_adj_Gk = Gρ_U'*Gk[1]
+        else
+            Gρ_U_adj_Gk = [Gρ_U' * Gki for Gki in Gk]
+        end
+        hessian_spectral_function!(d2zdρ2, cone.Δ2G, Gρ_U_adj_Gk, cone.Gmat2, cone.Gmat3, cone.Gρmat, cone.mat, rt2)
         d2zdρ2 .*= -1
 
-        Zρ_U_adj_Zk = [[Zρ_U[i]' * Zk[i][j] for j = 1:length(Zk[i])] for i = 1:cone.nblocks]
+        if all(length.(Zk) .== 1)
+            Zρ_U_adj_Zk = [Zρ_U[i]'*Zk[i][1] for i = 1:cone.nblocks]
+        else
+            Zρ_U_adj_Zk = [[Zρ_U[i]' * Zk[i][j] for j = 1:length(Zk[i])] for i = 1:cone.nblocks]
+        end
         for i = 1:cone.nblocks
-            hessian_spectral_function!(cone.big_mat, cone.Δ2Z[i], Zρ_U_adj_Zk[i], cone.Zmat[i], cone.Zmat2[i], cone.Zρmat[i], cone.mat, rt2)
+            hessian_spectral_function!(cone.big_mat, cone.Δ2Z[i], Zρ_U_adj_Zk[i], cone.Zmat2[i], cone.Zmat3[i], cone.Zρmat[i], cone.mat, rt2)
             d2zdρ2 .+= cone.big_mat
         end
     end
@@ -793,7 +801,7 @@ function hessian_spectral_function!(
     @inbounds for j in 1:size(K[1], 2)
         for i in 1:(j-1), scal in scals
             for k = 1:length(K)
-                @views mul!(temp1, K[k][:, j], K[k][:, i]', true, k != 1)
+                @views mul!(temp1, K[k][:, j], K[k][:, i]', scal, k != 1)
             end
             @. temp2 = Γ * (temp1 + temp1')
             applykraus_adj!(temp4, K, Hermitian(temp2), temp3)
@@ -812,6 +820,50 @@ function hessian_spectral_function!(
 
     return skr
 end
+
+"""
+Computes the matrix representation of the linear map
+ξ ↦ K'*(Γ .* (K*ξ*K')*K
+acting on svec(ξ). It corresponds to the Hessian of a spectral function
+with first divided differences matrix Γ.
+"""
+function hessian_spectral_function!(
+    skr::AbstractMatrix{T},
+    Γ::Matrix{T},
+    K::Matrix{R},
+    temp1::Matrix{R},
+    temp2::Matrix{R},
+    temp3::Matrix{R},
+    temp4::Matrix{R},
+    rt2::T
+) where {T<:Real,R<:RealOrComplex{T}}
+    @assert issymmetric(Γ) # must be symmetric (wrapper is less efficient)
+    rt2i = inv(rt2)
+    scals = (R <: Complex{T} ? [rt2i, rt2i * im] : [rt2i]) # real and imag parts
+    col_idx = 0
+    @inbounds for j in 1:size(K, 2)
+        @views K_j = K[:, j]
+        for i in 1:(j-1), scal in scals
+            @views K_i = K[:, i]
+            mul!(temp1, K_j, K_i', scal, false)
+            @. temp2 = Γ * (temp1 + temp1')
+            mul!(temp3, Hermitian(temp2), K)
+            mul!(temp4, K', temp3)
+            col_idx += 1
+            @views smat_to_svec!(skr[:, col_idx], temp4, rt2)
+        end
+
+        mul!(temp1, K_j, K_j')
+        @. temp2 = Γ * temp1
+        mul!(temp3, Hermitian(temp2), K)
+        mul!(temp4, K', temp3)
+        col_idx += 1
+        @views smat_to_svec!(skr[:, col_idx], temp4, rt2)
+    end
+
+    return skr
+end
+
 #temp must have the same dimensions as K[1]
 function applykraus!(result, K, X, temp)
     spectral_outer!(result, K[1], X, temp)
