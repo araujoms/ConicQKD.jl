@@ -36,7 +36,9 @@ const SAF = MOI.ScalarAffineFunction
 const VV = MOI.VectorOfVariables
 const VAF = MOI.VectorAffineFunction
 
+include("util.jl")
 include("epiqkdtri.jl")
+include("epirenyitri.jl")
 
 """
     EpiQKDTriCone{T,R}(Gkraus::VecOrMat, Zkraus::Vector, dim::Int; blocks::Vector, use_dual::Bool)
@@ -68,7 +70,41 @@ function Hypatia.cone_from_moi(::Type{T}, cone::EpiQKDTriCone{T,R}) where {T<:Re
     return EpiQKDTri{T,R}(cone.Gkraus, cone.Zkraus, cone.dim; blocks = cone.blocks, use_dual = cone.use_dual)
 end
 
-const NewCones{T<:Real} = Union{EpiQKDTriCone{T,T},EpiQKDTriCone{T,Complex{T}}}
+"""
+    EpiRenyiTriCone{T,R}(Gkraus::VecOrMat, Zkraus::Vector, dim::Int; blocks::Vector, use_dual::Bool)
+
+Renyi cone with number of real parameters `dim`. The cone is parametrized by the CP maps G and Z, given as vectors of Kraus operators `Gkraus` and `Zkraus`. `blocks` is an optional argument describing the block structure of Z as a vector of vectors. `use_dual` is an optional argument to optimize over the dual cone instead.
+"""
+struct EpiRenyiTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
+    α::Real
+    Gkraus::Vector{<:AbstractMatrix}
+    Zkraus::Vector{<:AbstractMatrix}
+    dim::Int
+    S::AbstractMatrix
+    blocks::Vector{<:AbstractVector}
+    use_dual::Bool
+
+    function EpiRenyiTriCone{T,R}(
+        α::Real,
+        Gkraus::Vector{<:AbstractMatrix},
+        Zkraus::Vector{<:AbstractMatrix},
+        dim::Int;
+        S::AbstractMatrix = I,
+        blocks::Vector{<:AbstractVector} = [1:size(Zkraus[1], 1)],
+        use_dual::Bool = false
+    ) where {T<:Real,R<:RealOrComplex{T}}
+        new{T,R}(α, Gkraus, Zkraus, dim, S, blocks, use_dual)
+    end
+end
+export EpiRenyiTriCone
+
+MOI.dimension(cone::EpiRenyiTriCone) = cone.dim
+
+function Hypatia.cone_from_moi(::Type{T}, cone::EpiRenyiTriCone{T,R}) where {T<:Real,R<:RealOrComplex{T}}
+    return EpiRenyiTri{T,R}(cone.α, cone.Gkraus, cone.Zkraus, cone.dim; S = cone.S, blocks = cone.blocks, use_dual = cone.use_dual)
+end
+
+const NewCones{T<:Real} = Union{EpiQKDTriCone{T,T},EpiQKDTriCone{T,Complex{T}},EpiRenyiTriCone{T,T},EpiRenyiTriCone{T,Complex{T}}}
 
 const NewSupportedCone{T<:Real} = Union{Hypatia.SupportedCone{T},NewCones{T}}
 
