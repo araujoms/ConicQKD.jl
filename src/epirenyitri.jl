@@ -60,6 +60,7 @@ mutable struct EpiRenyiTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     ρ_λ_inv::Vector{T}
     Gρ_λ_log::Vector{T}
     Zρ_λ_log::Vector{Vector{T}}
+    Zρα_λ::Vector{Vector{T}}
     z::T
     Δ2G::Matrix{T}
     Δ2Z::Vector{Matrix{T}}
@@ -68,6 +69,9 @@ mutable struct EpiRenyiTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     dzdρ::Vector{T}
     d2zdρ2vec::Vector{T}
     d2zdρ2::Matrix{T}
+
+    ZGZ::Matrix{R}
+    GZG::Matrix{R}
     #variables below are just scratch space
     mat::Matrix{R}
     mat2::Matrix{R}
@@ -82,7 +86,6 @@ mutable struct EpiRenyiTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Zρmat::Vector{Matrix{R}}
     ZGmat::Matrix{R}
     ZGmat2::Matrix{R}
-    ZDmat::Matrix{R}
 
     big_mat::Matrix{T}
     vec::Vector{T}
@@ -123,16 +126,16 @@ mutable struct EpiRenyiTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         cone.Zρ_dim = Cones.svec_length.(Ref(R), cone.Zd)
         cone.S = S
 
-        Gkraus = [R.(Gk) for Gk in Gkraus]
-        Zkraus = [R.(Zk) for Zk in Zkraus]
+        Gkraus = [R.(Gk) for Gk ∈ Gkraus]
+        Zkraus = [R.(Zk) for Zk ∈ Zkraus]
         cone.Gk = Gkraus
-        cone.Zk = [filter!(!iszero, [Zk[blocks[i], :] for Zk in Zkraus]) for i = 1:cone.nblocks]
+        cone.Zk = [filter!(!iszero, [Zk[blocks[i], :] for Zk ∈ Zkraus]) for i ∈ 1:cone.nblocks]
         cone.is_G_identity = (cone.Gk == [I(cone.d)])
         cone.is_S_identity = ((cone.S == [I(cone.Gd)]) || cone.S == I)
         cone.are_blocks_small = maximum(cone.Zd) <= isqrt(cone.d)
         if cone.are_blocks_small
             cone.G = kraus2matrix(Gkraus)
-            cone.Z = [kraus2matrix([Zk[blocks[i], :] for Zk in Zkraus]) for i = 1:length(blocks)]
+            cone.Z = [kraus2matrix([Zk[blocks[i], :] for Zk ∈ Zkraus]) for i ∈ 1:length(blocks)]
             cone.Gadj = Matrix(cone.G')
             cone.Zadj = Matrix.(adjoint.(cone.Z))
         end
@@ -168,19 +171,20 @@ function setup_extra_data!(cone::EpiRenyiTri{T,R}) where {T<:Real,R<:RealOrCompl
     cone.ρ_idxs = 2:(ρ_dim+1)
     cone.ρ = zeros(R, d, d)
     cone.Gρ = zeros(R, Gd, Gd)
-    cone.Zρ = [zeros(R, s, s) for s in Zd]
-    cone.Zρα = [zeros(R, s, s) for s in Zd]
+    cone.Zρ = [zeros(R, s, s) for s ∈ Zd]
+    cone.Zρα = [zeros(R, s, s) for s ∈ Zd]
     cone.ρ_inv = zeros(R, d, d)
     cone.dzdρ = zeros(T, ρ_dim)
     cone.d2zdρ2vec = zeros(T, ρ_dim)
     cone.Δ2G = zeros(T, Gd, Gd)
-    cone.Δ2Z = [zeros(T, s, s) for s in Zd]
+    cone.Δ2Z = [zeros(T, s, s) for s ∈ Zd]
     cone.Δ3G = zeros(T, Gd, Gd, Gd)
-    cone.Δ3Z = [zeros(T, s, s, s) for s in Zd]
+    cone.Δ3Z = [zeros(T, s, s, s) for s ∈ Zd]
     cone.d2zdρ2 = zeros(T, ρ_dim, ρ_dim)
     cone.ρ_λ_inv = zeros(T, d)
     cone.Gρ_λ_log = zeros(T, Gd)
-    cone.Zρ_λ_log = [zeros(T, s) for s in Zd]
+    cone.Zρ_λ_log = [zeros(T, s) for s ∈ Zd]
+    cone.Zρα_λ = [zeros(T, s) for s ∈ Zd]
 
     cone.Hρ = zeros(T, ρ_dim, ρ_dim)
 
@@ -191,23 +195,24 @@ function setup_extra_data!(cone::EpiRenyiTri{T,R}) where {T<:Real,R<:RealOrCompl
     cone.Gmat2 = zeros(R, Gd, Gd)
     cone.Gmat3 = zeros(R, Gd, Gd)
     cone.Gρmat = zeros(R, Gd, d)
-    cone.Zmat = [zeros(R, s, s) for s in Zd]
-    cone.Zmat2 = [zeros(R, s, s) for s in Zd]
-    cone.Zmat3 = [zeros(R, s, s) for s in Zd]
-    cone.Zρmat = [zeros(R, s, d) for s in Zd]
+    cone.Zmat = [zeros(R, s, s) for s ∈ Zd]
+    cone.Zmat2 = [zeros(R, s, s) for s ∈ Zd]
+    cone.Zmat3 = [zeros(R, s, s) for s ∈ Zd]
+    cone.Zρmat = [zeros(R, s, d) for s ∈ Zd]
     cone.ZGmat = zeros(R, ZD, Gd)
     cone.ZGmat2 = zeros(R, ZD, Gd)
-    cone.ZDmat = zeros(R, ZD, ZD)
+    cone.ZGZ = zeros(R, ZD, ZD)
+    cone.GZG = zeros(R, Gd, Gd)
 
     cone.big_mat = zeros(T, ρ_dim, ρ_dim)
     cone.vec = zeros(T, ρ_dim)
     cone.Gvec = zeros(T, Gρ_dim)
-    cone.Zvec = [zeros(T, s) for s in Zρ_dim]
+    cone.Zvec = [zeros(T, s) for s ∈ Zρ_dim]
     if cone.are_blocks_small
         cone.d2zdρ2G = zeros(T, Gρ_dim, Gρ_dim)
-        cone.d2zdρ2Z = [zeros(T, s, s) for s in Zρ_dim]
+        cone.d2zdρ2Z = [zeros(T, s, s) for s ∈ Zρ_dim]
         cone.big_Gmat = zeros(T, ρ_dim, Gρ_dim)
-        cone.big_Zmat = [zeros(T, ρ_dim, s) for s in Zρ_dim]
+        cone.big_Zmat = [zeros(T, ρ_dim, s) for s ∈ Zρ_dim]
     end
     return
 end
@@ -225,7 +230,7 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiRenyiTri{T,R}) wher
     incr = (cone.is_complex ? 2 : 1)
     arr .= 0
     k = 1
-    for i = 1:d
+    for i ∈ 1:d
         arr[1+k] = γ
         k += incr * i + 1
     end
@@ -238,22 +243,24 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiRenyiTri{T,R}) wher
     end
     applykraus!.(cone.Zρ, cone.Zk, Ref(Hermitian(cone.ρ)), cone.Zρmat)
     cone.Zρ_fact = eigen.(Hermitian.(cone.Zρ))
-    Zρ_λ = [fact.values for fact in cone.Zρ_fact]
-    Zρ_λα = [v .^ cone.α2 for v in Zρ_λ]
-    Zρ_U = [fact.vectors for fact in cone.Zρ_fact]
-    spectral_outer!.(cone.Zρα, Zρ_U, Zρ_λα, cone.Zmat)
+    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
+    for i ∈ eachindex(Zρ_λ)
+        cone.Zρα_λ[i] .= Zρ_λ[i] .^ cone.α2
+    end
+    Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
+    spectral_outer!.(cone.Zρα, Zρ_U, cone.Zρα_λ, cone.Zmat)
     if cone.is_S_identity
         for i ∈ 1:cone.nblocks, j ∈ 1:cone.nblocks #TODO optimize
-            @views cone.ZDmat[blocks[i], blocks[j]] .= cone.Zρα[i] * cone.Gρ[blocks[i], blocks[j]] * cone.Zρα[j]
+            @views cone.ZGZ[blocks[i], blocks[j]] .= cone.Zρα[i] * cone.Gρ[blocks[i], blocks[j]] * cone.Zρα[j]
         end
     else
         for i ∈ 1:cone.nblocks
             @views mul!(cone.ZGmat[blocks[i], :], cone.Zρα[i], cone.S[blocks[i], :])
         end
         mul!(cone.ZGmat2, cone.ZGmat, cone.Gρ)
-        mul!(cone.ZDmat, cone.ZGmat2, cone.ZGmat')
+        mul!(cone.ZGZ, cone.ZGmat2, cone.ZGmat')
     end
-    λ = eigvals(Hermitian(cone.ZDmat))
+    λ = eigvals(Hermitian(cone.ZGZ))
     renyi = mapreduce(x -> x > 0 ? x^cone.α : T(0), +, λ)
     arr[1] = 0.5 * (sα * renyi + sqrt(4 + renyi^2))
     return arr
@@ -279,22 +286,24 @@ function update_feas(cone::EpiRenyiTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     if isposdef(Hermitian(cone.ρ))
         cone.Zρ_fact = eigen.(Hermitian.(cone.Zρ))
         if all(isposdef.(cone.Zρ_fact)) #necessary because of numerical error
-            Zρ_λ = [fact.values for fact in cone.Zρ_fact]
-            Zρ_λα = [v .^ cone.α2 for v in Zρ_λ]
-            Zρ_U = [fact.vectors for fact in cone.Zρ_fact]
-            spectral_outer!.(cone.Zρα, Zρ_U, Zρ_λα, cone.Zmat)
+            Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
+            for i ∈ eachindex(Zρ_λ)
+                cone.Zρα_λ[i] .= Zρ_λ[i] .^ cone.α2
+            end
+            Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
+            spectral_outer!.(cone.Zρα, Zρ_U, cone.Zρα_λ, cone.Zmat)
             if cone.is_S_identity
                 for i ∈ 1:cone.nblocks, j ∈ 1:cone.nblocks #TODO optimize
-                    @views cone.ZDmat[blocks[i], blocks[j]] .= cone.Zρα[i] * cone.Gρ[blocks[i], blocks[j]] * cone.Zρα[j]
+                    @views cone.ZGZ[blocks[i], blocks[j]] .= cone.Zρα[i] * cone.Gρ[blocks[i], blocks[j]] * cone.Zρα[j]
                 end
             else
                 for i ∈ 1:cone.nblocks
                     @views mul!(cone.ZGmat[blocks[i], :], cone.Zρα[i], cone.S[blocks[i], :])
                 end
                 mul!(cone.ZGmat2, cone.ZGmat, cone.Gρ)
-                mul!(cone.ZDmat, cone.ZGmat2, cone.ZGmat')
+                mul!(cone.ZGZ, cone.ZGmat2, cone.ZGmat')
             end
-            λ = eigvals(Hermitian(cone.ZDmat))
+            λ = eigvals(Hermitian(cone.ZGZ))
             renyi = mapreduce(x -> x > 0 ? x^cone.α : T(0), +, λ)
             cone.z = point[1] - cone.sα * renyi
             cone.is_feas = (cone.z > 0)
@@ -319,40 +328,86 @@ function update_grad(cone::EpiRenyiTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     Zvec = cone.Zvec
     Zmat = cone.Zmat
     Zmat2 = cone.Zmat2
+    Zmat3 = cone.Zmat3
     Zρmat = cone.Zρmat
+    ZGmat = cone.ZGmat
+    ZGmat2 = cone.ZGmat2
     Zd = cone.Zd
+    α = cone.α
+    α2 = cone.α2
+    Zρα = cone.Zρα
+    S = cone.S
+    blocks = cone.blocks
 
     zi = inv(cone.z)
     g[1] = -zi
 
-    spectral_outer!(Gmat2, cone.Gρ_fact.vectors, cone.Gρ_λ_log, Gmat)
-    for i = 1:cone.Gd
-        Gmat2[i, i] += 1
-    end
-    if cone.is_G_identity
-        cone.mat .= -1 .* Gmat2
-    else
-        applykraus_adj!(cone.mat, Gk, Hermitian(Gmat2), Gρmat)
-        cone.mat .*= -1
+    ## G part of gradient
+    ZGZ_λ, ZGZ_U = eigen(Hermitian(cone.ZGZ))
+    ZGZα_λ = map(x -> x < eps(T) ? T(0) : x^(α - 1), ZGZ_λ) #FIXME
+    temp = α * ZGZ_U * Diagonal(ZGZα_λ) * ZGZ_U'
+    temp2 = zeros(R, cone.ZD, cone.ZD)
+    for i ∈ eachindex(blocks), j ∈ eachindex(blocks) #TODO optimize
+        @views temp2[blocks[i], blocks[j]] .= Zρα[i] * temp[blocks[i], blocks[j]] * Zρα[j]
     end
 
-    Zρ_U = [fact.vectors for fact in cone.Zρ_fact]
-    spectral_outer!.(Zmat2, Zρ_U, cone.Zρ_λ_log, Zmat)
-    for i = 1:cone.nblocks
-        for j = 1:Zd[i]
-            Zmat2[i][j, j] += 1
-        end
+    if cone.is_S_identity
+        temp3 = temp2
+    else
+        temp3 = S' * temp2 * S
     end
-    for i = 1:cone.nblocks
+
+    if cone.is_G_identity
+        cone.mat .= temp3
+    else
+        applykraus_adj!(cone.mat, Gk, Hermitian(temp3), Gρmat)
+    end
+
+    ## Z part of gradient
+    cone.Gρ_fact = eigen(Hermitian(cone.Gρ))
+    Gρ_λ, Gρ_U = cone.Gρ_fact
+    Gρroot = Gρ_U * Diagonal(sqrt.(Gρ_λ)) * Gρ_U'
+    if cone.is_S_identity
+        for i ∈ eachindex(blocks)
+            @views mul!(ZGmat2[blocks[i], :], cone.Zρα[i], Gρroot[blocks[i], :])
+        end
+    else
+        for i ∈ eachindex(blocks)
+            @views mul!(ZGmat[blocks[i], :], cone.Zρα[i], S[blocks[i], :])
+        end
+        mul!(ZGmat2, ZGmat, Gρroot)
+    end
+    mul!(cone.GZG, ZGmat2', ZGmat2) #TODO check dispatch to syrk!
+    GZG_λ, GZG_U = eigen(Hermitian(cone.GZG))
+    if cone.is_S_identity
+        temp = Gρroot * GZG_U * Diagonal(GZG_λ .^ (0.5 * (α - 1)))
+    else
+        temp = S * Gρroot * GZG_U * Diagonal(GZG_λ .^ (0.5 * (α - 1)))
+    end
+    temp2 = temp * temp'
+    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
+    Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
+    for i ∈ eachindex(blocks)
+        @views Zmat[i] .= Zρ_U[i]' * temp2[blocks[i], blocks[i]] * Zρ_U[i]
+    end
+
+    dZρα_λ = [α2 * (v .^ (α2 - 1)) for v ∈ Zρ_λ]
+    Δ2generic!.(cone.Δ2Z, Zρ_λ, cone.Zρα_λ, dZρα_λ)   #Γ(Λ_Z)
+    for i ∈ eachindex(blocks)
+        Zmat2[i] .= cone.Δ2Z[i] .* Zmat[i]
+    end
+    spectral_outer!.(Zmat3, Zρ_U, Hermitian.(Zmat2), Zmat)
+    for i ∈ eachindex(blocks)
         applykraus_adj!(cone.mat2, Zk[i], Hermitian(Zmat2[i]), Zρmat[1])
         cone.mat .+= cone.mat2
     end
     smat_to_svec!(dzdρ, cone.mat, rt2)
+    dzdρ .*= cone.sα
 
     @. @views g[cone.ρ_idxs] = -zi * dzdρ
 
     cone.ρ_fact = cone.is_G_identity ? cone.Gρ_fact : eigen(Hermitian(cone.ρ))
-    (ρ_λ, ρ_U) = cone.ρ_fact
+    ρ_λ, ρ_U = cone.ρ_fact
     cone.ρ_λ_inv .= inv.(ρ_λ)
     spectral_outer!(cone.ρ_inv, ρ_U, cone.ρ_λ_inv, cone.mat)
     smat_to_svec!(cone.vec, cone.ρ_inv, rt2)
@@ -367,7 +422,7 @@ function update_hess_aux(cone::EpiRenyiTri)
 
     Δ2!(cone.Δ2G, cone.Gρ_fact.values, cone.Gρ_λ_log)   #Γ(Λ_G)
 
-    Zρ_λ = [fact.values for fact in cone.Zρ_fact]
+    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
     Δ2!.(cone.Δ2Z, Zρ_λ, cone.Zρ_λ_log)   #Γ(Λ_Z)
 
     return cone.hess_aux_updated = true
@@ -412,13 +467,13 @@ function d2zdρ2!(
 
     # Code corresponding to Z
     applykraus!.(Zmat, Zk, Ref(Hermitian(ρ_arr_mat)), Zρmat)  # Zmat = Z(ξ)
-    Zρ_U = [fact.vectors for fact in cone.Zρ_fact]
+    Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
     spectral_outer!.(Zmat2, adjoint.(Zρ_U), Hermitian.(Zmat), Zmat3) # (U'_Z Z(ξ)U_Z)
-    for i = 1:cone.nblocks
+    for i ∈ 1:cone.nblocks
         Zmat[i] .= cone.Δ2Z[i] .* Zmat2[i] # Γ(Λ)∘(U'_Z Z(ξ)U_Z)
     end
     spectral_outer!.(Zmat2, Zρ_U, Hermitian.(Zmat), Zmat3)  # U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z
-    for i = 1:cone.nblocks # Z'{U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z}
+    for i ∈ 1:cone.nblocks # Z'{U_Z[Γ(Λ_Z)∘(U'_Z Z(ξ)U_Z)]U'_Z}
         applykraus_adj!(cone.mat3, Zk[i], Hermitian(Zmat2[i]), Zρmat[1])
         cone.mat2 .+= cone.mat3
     end
@@ -445,7 +500,7 @@ function hess_prod!(
     zi = inv(cone.z)
 
     # For each vector ξ do:
-    @inbounds for i = 1:size(arr, 2)
+    @inbounds for i ∈ 1:size(arr, 2)
         # Hhh * a_h + Hhρ * a_ρ
         @views ρ_arr = arr[ρ_idxs, i]
         @views ρ_prod = prod[ρ_idxs, i]
@@ -504,7 +559,7 @@ function update_inv_hess_aux(cone::EpiRenyiTri{T,R}) where {T<:Real,R<:RealOrCom
     dzdρ = cone.dzdρ
     d2zdρ2 = cone.d2zdρ2
     Gρ_U = cone.Gρ_fact.vectors
-    Zρ_U = [fact.vectors for fact in cone.Zρ_fact]
+    Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
 
     if cone.are_blocks_small #for small blocks it's more efficient to compute the little pieces with hessian_spectral_function! and later expand them into d2zdρ2
         d2zdρ2G = cone.d2zdρ2G
@@ -519,7 +574,7 @@ function update_inv_hess_aux(cone::EpiRenyiTri{T,R}) where {T<:Real,R<:RealOrCom
         end
 
         eig_dot_kron!.(d2zdρ2Z, cone.Δ2Z, Zρ_U, cone.Zmat, cone.Zmat2, cone.Zmat3, Ref(rt2))
-        for i = 1:cone.nblocks
+        for i ∈ 1:cone.nblocks
             mul!(cone.big_Zmat[i], cone.Zadj[i], d2zdρ2Z[i])
             mul!(d2zdρ2, cone.big_Zmat[i], cone.Z[i], true, true)
         end
@@ -528,17 +583,17 @@ function update_inv_hess_aux(cone::EpiRenyiTri{T,R}) where {T<:Real,R<:RealOrCom
         if length(Gk) == 1
             Gρ_U_adj_Gk = Gρ_U' * Gk[1]
         else
-            Gρ_U_adj_Gk = [Gρ_U' * Gki for Gki in Gk]
+            Gρ_U_adj_Gk = [Gρ_U' * Gki for Gki ∈ Gk]
         end
         hessian_spectral_function!(d2zdρ2, cone.Δ2G, Gρ_U_adj_Gk, cone.Gmat2, cone.Gmat3, cone.Gρmat, cone.mat, rt2)
         d2zdρ2 .*= -1
 
         if all(length.(Zk) .== 1)
-            Zρ_U_adj_Zk = [Zρ_U[i]' * Zk[i][1] for i = 1:cone.nblocks]
+            Zρ_U_adj_Zk = [Zρ_U[i]' * Zk[i][1] for i ∈ 1:cone.nblocks]
         else
-            Zρ_U_adj_Zk = [[Zρ_U[i]' * Zk[i][j] for j = 1:length(Zk[i])] for i = 1:cone.nblocks]
+            Zρ_U_adj_Zk = [[Zρ_U[i]' * Zk[i][j] for j ∈ 1:length(Zk[i])] for i ∈ 1:cone.nblocks]
         end
-        for i = 1:cone.nblocks
+        for i ∈ 1:cone.nblocks
             hessian_spectral_function!(
                 cone.big_mat,
                 cone.Δ2Z[i],
@@ -588,7 +643,7 @@ function update_dder3_aux(cone::EpiRenyiTri)
 
     Δ3!(cone.Δ3G, cone.Δ2G, cone.Gρ_fact.values)   # Γ2(Λ_G)
 
-    Zρ_λ = [fact.values for fact in cone.Zρ_fact]
+    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
     Δ3!.(cone.Δ3Z, cone.Δ2Z, Zρ_λ)   #Γ2(Λ_Z)
 
     cone.dder3_aux_updated = true
@@ -624,8 +679,8 @@ function d3zdρ3!(
     Gvec_sim = spectral_outer!(Gmat2, Gρ_U', Hermitian(Gmat), Gmat3) # (U'_G G(ξ)U_G)
 
     @views Gtempvec = cone.Gmat3[:, 1]
-    @inbounds @views for j = 1:(cone.Gd) # M_G(ξ) = 2 ∑_k ξ_ik ξ_kj Γ_ijk(Λ_G)
-        for i = 1:j
+    @inbounds @views for j ∈ 1:(cone.Gd) # M_G(ξ) = 2 ∑_k ξ_ik ξ_kj Γ_ijk(Λ_G)
+        for i ∈ 1:j
             Gtempvec .= cone.Δ3G[i, j, :] .* Gvec_sim[:, j]
             Gmat[i, j] = 2 * dot(Gvec_sim[:, i], Gtempvec)
         end
@@ -642,18 +697,18 @@ function d3zdρ3!(
 
     # Code corresponding to Z
     applykraus!.(Zmat, Zk, Ref(Hermitian(ρ_dir_mat)), Zρmat)  # Zmat = Z(ξ)
-    Zρ_U = [fact.vectors for fact in cone.Zρ_fact]
+    Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
     Zvec_sim = spectral_outer!.(Zmat2, adjoint.(Zρ_U), Hermitian.(Zmat), Zmat3) # (U'_Z Z(ξ)U_Z)
 
-    @inbounds @views for n = 1:cone.nblocks # M_Z(ξ) = 2 ∑_k ξ_ik ξ_kj Γ_ijk(Λ_Z)
-        for j = 1:cone.Zd[n]
-            for i = 1:j
+    @inbounds @views for n ∈ 1:cone.nblocks # M_Z(ξ) = 2 ∑_k ξ_ik ξ_kj Γ_ijk(Λ_Z)
+        for j ∈ 1:cone.Zd[n]
+            for i ∈ 1:j
                 Zmat[n][i, j] = 2 * dot(Zvec_sim[n][:, i], cone.Δ3Z[n][i, j, :] .* Zvec_sim[n][:, j])
             end
         end
     end
     spectral_outer!.(Zmat2, Zρ_U, Hermitian.(Zmat), Zmat3) # U_Z[M_Z(ξ)]U'_Z
-    for i = 1:cone.nblocks # Z'{U_Z[M_Z(ξ)]U'_Z}
+    for i ∈ 1:cone.nblocks # Z'{U_Z[M_Z(ξ)]U'_Z}
         applykraus_adj!(cone.mat3, Zk[i], Hermitian(Zmat2[i]), Zρmat[1])
         cone.mat2 .+= cone.mat3
     end

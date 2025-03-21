@@ -63,19 +63,19 @@ function test_oracles(
     @test Cones.is_feas(cone)
     @test cone.point == point
 
-    #    dual_point = -Cones.grad(cone)
-    #    Cones.load_dual_point(cone, dual_point)
-    #    @test Cones.is_dual_feas(cone)
-    #    @test cone.dual_point == dual_point
-    #    @test Cones.get_proxsqr(cone, one(T), true) <= 1 # max proximity
-    #    @test Cones.get_proxsqr(cone, one(T), false) <= dim # sum proximity
+    dual_point = -Cones.grad(cone)
+    Cones.load_dual_point(cone, dual_point)
+    @test Cones.is_dual_feas(cone)
+    @test cone.dual_point == dual_point
+    @test Cones.get_proxsqr(cone, one(T), true) <= 1 # max proximity
+    @test Cones.get_proxsqr(cone, one(T), false) <= dim # sum proximity
 
-    #    # test centrality of initial point
-    #    if isfinite(init_tol)
-    #        @test point ≈ dual_point atol = init_tol rtol = init_tol
-    #    end
-    #    init_only && return
-    #
+    # test centrality of initial point
+    if isfinite(init_tol)
+        @test point ≈ dual_point atol = init_tol rtol = init_tol
+    end
+    init_only && return
+
     #    # test at initial point
     #    prod_vec = zero(point)
     #    #    hess = Cones.hess(cone)
@@ -166,7 +166,7 @@ function test_barrier(
     @test Cones.is_feas(cone)
     TFD_point = TFD.(point)
 
-    #    fd_grad = ForwardDiff.gradient(barrier, TFD_point)
+    fd_grad = ForwardDiff.gradient(barrier, TFD_point)
     #    @test Cones.grad(cone) ≈ fd_grad atol = tol rtol = tol
     #
     #    dir = 10 * randn(T, dim)
@@ -316,9 +316,9 @@ function random_protocol(din::Integer, dout::Integer, R::Type)
 
     G = [random_unitary(R, din^2)]
     #    G = [R.(I(din^2))]
-    Z = [kron(proj(R, i, dout) * V, I(din)) for i = 1:dout]
+    Z = [kron(proj(R, i, dout) * V, I(din)) for i ∈ 1:dout]
 
-    blocks = [(i-1)*din+1:i*din for i = 1:dout]
+    blocks = [(i-1)*din+1:i*din for i ∈ 1:dout]
 
     return G, Z, rho_dim, rho_idxs, blocks
 end
@@ -369,7 +369,7 @@ function random_point!(point, cone::EpiRenyiTri{T,R}) where {T,R}
     Zrhoblocks = smat.(cone.Z .* Ref(svec(rho, R)), Ref(R))
     Zrho = Hermitian(Matrix(BlockDiagonals.BlockDiagonal(Zrhoblocks)))
     r = renyi(Grho, Zrho, cone.α)
-    point[1] = 2 * cone.sα * r
+    point[1] = cone.sα * r + 0.1
     point[2:end] .= svec(rho, R)
 end
 
@@ -380,7 +380,7 @@ function test_oracles(cone::Type{EpiRenyiTri{T,R}}) where {T,R}
 end
 
 function random_protocol(cone::Type{EpiRenyiTri{T,R}}, din::Integer, dout::Integer) where {T,R}
-    α = 1.8
+    α = 0.8
 
     rho_dim = Cones.svec_length(R, din^2)
     rho_idxs = 2:(rho_dim+1)
@@ -390,9 +390,9 @@ function random_protocol(cone::Type{EpiRenyiTri{T,R}}, din::Integer, dout::Integ
 
     G = [random_unitary(R, din^2)]
     #    G = [R.(I(din^2))]
-    Z = [kron(proj(R, i, dout) * V, I(din)) for i = 1:dout]
+    Z = [kron(proj(R, i, dout) * V, I(din)) for i ∈ 1:dout]
 
-    blocks = [(i-1)*din+1:i*din for i = 1:dout]
+    blocks = [(i-1)*din+1:i*din for i ∈ 1:dout]
 
     return α, G, Z, rho_dim, rho_idxs, blocks, kron(V, I(din))
 end
@@ -407,7 +407,7 @@ function test_barrier(cone::Type{EpiRenyiTri{T,R}}) where {T,R}
     function barrier(point)
         u = point[1]
         rhoH = smat(point[rho_idxs], R)
-        GrhoH = smat(G * point[rho_idxs], R)
+        GrhoH = Hermitian(S * smat(G * point[rho_idxs], R) * S')
         ZrhoH = smat(Z * point[rho_idxs], R)
         r = renyi(GrhoH, ZrhoH, α)
         return -real(log(u - sα * r)) - logdet_pd(rhoH)

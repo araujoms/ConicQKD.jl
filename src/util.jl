@@ -241,3 +241,25 @@ function applykraus_adj!(result, K, X, temp)
     end
     return result
 end
+
+function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector{T}) where {T <: Real}
+    rteps = sqrt(eps(T))
+    d = length(λ)
+
+    @inbounds for j in 1:d
+        for i in 1:(j - 1)
+            λ_ij = λ[i] - λ[j]
+            if abs(λ_ij) < rteps
+                Δ2[i, j] = 0.5*(dfλ[i] + dfλ[j])
+            else
+                Δ2[i, j] = (fλ[i] - fλ[j]) / λ_ij
+            end
+        end
+        Δ2[j, j] = dfλ[j]
+    end
+
+    # make symmetric
+    LinearAlgebra.copytri!(Δ2, 'U')
+    return Δ2
+end
+
