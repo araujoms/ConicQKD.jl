@@ -76,20 +76,20 @@ end
 Renyi cone with number of real parameters `dim`. The cone is parametrized by the CP maps G and Z, given as vectors of Kraus operators `Gkraus` and `Zkraus`. `blocks` is an optional argument describing the block structure of Z as a vector of vectors. `use_dual` is an optional argument to optimize over the dual cone instead.
 """
 struct EpiRenyiTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
-    α::Real
+    α::T
     Gkraus::Vector{<:AbstractMatrix}
     Zkraus::Vector{<:AbstractMatrix}
     dim::Int
-    S::AbstractMatrix
+    S::Union{AbstractMatrix, UniformScaling}
     blocks::Vector{<:AbstractVector}
     use_dual::Bool
 
     function EpiRenyiTriCone{T,R}(
-        α::Real,
+        α::T,
         Gkraus::Vector{<:AbstractMatrix},
         Zkraus::Vector{<:AbstractMatrix},
         dim::Int;
-        S::AbstractMatrix = I,
+        S::Union{AbstractMatrix, UniformScaling} = I,
         blocks::Vector{<:AbstractVector} = [1:size(Zkraus[1], 1)],
         use_dual::Bool = false
     ) where {T<:Real,R<:RealOrComplex{T}}

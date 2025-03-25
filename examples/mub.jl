@@ -72,7 +72,7 @@ rate_mub_analytic(v::Real, d::Integer, n::Integer = d + 1) = hae_mub_analytic(v,
 hab_mub(v::T, d) where {T<:AbstractFloat} = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(T(d) - 1)
 
 "Computes the conditional entropy H(A|E) numerically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs. `n` must respect 2 ≤ `n` ≤ `d` + 1. `analytical_mub` specifies whether the MUBs are analytical or numerical."
-function hae_mub(v::T, d::Integer, n::Integer = d + 1; analytical_mub::Bool = true) where {T<:AbstractFloat}
+function hae_mub(v::T, d::Integer, n::Integer = d + 1, α::T = T(9)/10; analytical_mub::Bool = true) where {T<:AbstractFloat}
     is_complex = true
     model = GenericModel{T}()
     if is_complex
@@ -97,7 +97,7 @@ function hae_mub(v::T, d::Integer, n::Integer = d + 1; analytical_mub::Bool = tr
 
     @variable(model, h)
     @objective(model, Min, h / log(T(2)))
-    @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhat, 1 + vec_dim; blocks))
+    @constraint(model, [h; ρ_vec] in EpiRenyiTriCone{T,R}(α, Ghat, Zhat, 1 + vec_dim; blocks))
 
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)

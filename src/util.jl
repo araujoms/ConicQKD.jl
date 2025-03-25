@@ -222,6 +222,18 @@ function hessian_spectral_function!(
     return skr
 end
 
+for (matrixtype, wrapper) ∈ ((:AbstractMatrix, :identity), (:Symmetric, :Symmetric), (:Hermitian, :Hermitian))
+    @eval begin
+        function applykraus(K::Vector{<:AbstractMatrix{T}}, M::$matrixtype{S}) where {T,S}
+            dout, din = size(K[1])
+            TS = Base.promote_op(*, T, S)
+            temp = Matrix{TS}(undef, dout, din)
+            result = Matrix{TS}(undef, dout, dout)
+            return $wrapper(applykraus!(result, K, M, temp))
+        end
+    end
+end
+
 #temp must have the same dimensions as K[1]
 function applykraus!(result, K, X, temp)
     spectral_outer!(result, K[1], X, temp)

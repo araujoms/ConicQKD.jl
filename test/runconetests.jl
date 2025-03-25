@@ -30,8 +30,8 @@ end
     println("starting oracle tests")
     @testset "oracle tests" begin
         real_types = [
-            Float64
-            # Float32,
+            Float64,
+            Float32,
             # BigFloat,
         ]
         @testset "$cone" for T in real_types, cone in cone_types(T)

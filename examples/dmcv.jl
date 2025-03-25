@@ -185,7 +185,7 @@ function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFlo
 
     @variable(model, h)
     @objective(model, Min, h / log(T(2)))
-    @constraint(model, [h; ρAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
+    @constraint(model, [h; ρAB_vec] in EpiRenyiTriCone{T,Complex{T}}(T(8)/10, Ghat, Zhatperm, 1 + vec_dim; S = G, blocks))
 
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
