@@ -298,7 +298,7 @@ function update_feas(cone::EpiRenyiTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
             Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
             spectral_outer!.(cone.Zρα, Zρ_U, cone.Zρα_λ, cone.Zmat)
             if cone.is_S_identity
-                for i ∈ eachindex(blocks), j ∈ eachindex(blocks)
+                for i ∈ eachindex(blocks)
                     @views mul!(cone.ZG[blocks[i], :], cone.Zρα[i], cone.Gρroot[blocks[i], :])
                 end
             else
