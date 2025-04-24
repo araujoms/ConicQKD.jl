@@ -65,11 +65,11 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{T}, rt2::
     dout, din = size.(Ref(mat), (1, 2))
 
     col_idx = 1
-    @inbounds for l = 1:din
-        for k = 1:(l-1)
+    @inbounds for l ∈ 1:din
+        for k ∈ 1:(l-1)
             row_idx = 1
-            for j = 1:dout
-                for i = 1:(j-1)
+            for j ∈ 1:dout
+                for i ∈ 1:(j-1)
                     skr[row_idx, col_idx] = mat[i, k] * mat[j, l] + mat[i, l] * mat[j, k]
                     row_idx += 1
                 end
@@ -80,8 +80,8 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{T}, rt2::
         end
 
         row_idx = 1
-        for j = 1:dout
-            for i = 1:(j-1)
+        for j ∈ 1:dout
+            for i ∈ 1:(j-1)
                 skr[row_idx, col_idx] = rt2 * mat[i, l] * mat[j, l]
                 row_idx += 1
             end
@@ -101,11 +101,11 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{Complex{T
     dout, din = size.(Ref(mat), (1, 2))
 
     col_idx = 1
-    @inbounds for l = 1:din
-        for k = 1:(l-1)
+    @inbounds for l ∈ 1:din
+        for k ∈ 1:(l-1)
             row_idx = 1
-            for j = 1:dout
-                for i = 1:(j-1)
+            for j ∈ 1:dout
+                for i ∈ 1:(j-1)
                     a = mat[i, k] * conj(mat[j, l])
                     b = conj(mat[i, l]) * mat[j, k]
                     Cones.spectral_kron_element!(skr, row_idx, col_idx, a, b)
@@ -120,8 +120,8 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{Complex{T
         end
 
         row_idx = 1
-        for j = 1:dout
-            for i = 1:(j-1)
+        for j ∈ 1:dout
+            for i ∈ 1:(j-1)
                 c = rt2 * mat[i, l] * conj(mat[j, l])
                 skr[row_idx, col_idx] = real(c)
                 skr[row_idx+1, col_idx] = -imag(c)
@@ -156,9 +156,9 @@ function hessian_spectral_function!(
     rt2i = inv(rt2)
     scals = (R <: Complex{T} ? [rt2i, rt2i * im] : [rt2i]) # real and imag parts
     col_idx = 0
-    @inbounds for j in 1:size(K[1], 2)
-        for i in 1:(j-1), scal in scals
-            for k = 1:length(K)
+    @inbounds for j ∈ 1:size(K[1], 2)
+        for i ∈ 1:(j-1), scal ∈ scals
+            for k ∈ 1:length(K)
                 @views mul!(temp1, K[k][:, j], K[k][:, i]', scal, k != 1)
             end
             @. temp2 = Γ * (temp1 + temp1')
@@ -167,7 +167,7 @@ function hessian_spectral_function!(
             @views smat_to_svec!(skr[:, col_idx], temp4, rt2)
         end
 
-        for k = 1:length(K)
+        for k ∈ 1:length(K)
             @views mul!(temp1, K[k][:, j], K[k][:, j]', true, k != 1)
         end
         @. temp2 = Γ * temp1
@@ -199,9 +199,9 @@ function hessian_spectral_function!(
     rt2i = inv(rt2)
     scals = (R <: Complex{T} ? [rt2i, rt2i * im] : [rt2i]) # real and imag parts
     col_idx = 0
-    @inbounds for j in 1:size(K, 2)
+    @inbounds for j ∈ 1:size(K, 2)
         @views K_j = K[:, j]
-        for i in 1:(j-1), scal in scals
+        for i ∈ 1:(j-1), scal ∈ scals
             @views K_i = K[:, i]
             mul!(temp1, K_j, K_i', scal, false)
             @. temp2 = Γ * (temp1 + temp1')
@@ -237,7 +237,7 @@ end
 #temp must have the same dimensions as K[1]
 function applykraus!(result, K, X, temp)
     spectral_outer!(result, K[1], X, temp)
-    for i = 2:length(K)
+    for i ∈ 2:length(K)
         mul!(temp, K[i], X)
         mul!(result, temp, K[i]', true, true)
     end
@@ -247,22 +247,22 @@ end
 #temp must have the same dimensions as K[1]
 function applykraus_adj!(result, K, X, temp)
     spectral_outer!(result, K[1]', X, temp)
-    for i = 2:length(K)
+    for i ∈ 2:length(K)
         mul!(temp, X, K[i])
         mul!(result, K[i]', temp, true, true)
     end
     return result
 end
 
-function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector{T}) where {T <: Real}
+function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector{T}) where {T<:Real}
     rteps = sqrt(eps(T))
     d = length(λ)
 
-    @inbounds for j in 1:d
-        for i in 1:(j - 1)
+    @inbounds for j ∈ 1:d
+        for i ∈ 1:(j-1)
             λ_ij = λ[i] - λ[j]
             if abs(λ_ij) < rteps
-                Δ2[i, j] = 0.5*(dfλ[i] + dfλ[j])
+                Δ2[i, j] = 0.5 * (dfλ[i] + dfλ[j])
             else
                 Δ2[i, j] = (fλ[i] - fλ[j]) / λ_ij
             end
@@ -275,3 +275,109 @@ function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector
     return Δ2
 end
 
+if VERSION.minor == 12
+    import LinearAlgebra.generic_matmatmul_wrapper!
+    import LinearAlgebra:
+        BlasFlag, lapack_size, _valtypeparam, copytri!, require_one_based_indexing, checksquare, _rmul_or_fill!
+    Base.@constprop :aggressive function generic_matmatmul_wrapper!(
+        C::StridedMatrix{T},
+        tA,
+        tB,
+        A::StridedVecOrMat{T},
+        B::StridedVecOrMat{T},
+        α::Number,
+        β::Number,
+        val::BlasFlag.SyrkHerkGemm
+    ) where {T<:Number}
+        mA, nA = lapack_size(tA, A)
+        mB, nB = lapack_size(tB, B)
+        if any(iszero, size(A)) || any(iszero, size(B)) || iszero(α)
+            matmul_size_check(size(C), (mA, nA), (mB, nB))
+            return _rmul_or_fill!(C, β)
+        end
+
+        if A === B
+            tA_uc = uppercase(tA) # potentially strip a WrapperChar
+            aat = (tA_uc == 'N')
+            blasfn = _valtypeparam(val)
+            if blasfn == BlasFlag.SYRK && T <: Union{Real,Complex} && (iszero(β) || issymmetric(C))
+                return copytri!(generic_syrk!(C, A, false, aat, α, β), 'U')
+            elseif blasfn == BlasFlag.HERK && isreal(α) && isreal(β) && (iszero(β) || ishermitian(C))
+                return copytri!(generic_syrk!(C, A, true, aat, α, β), 'U', true)
+            end
+        end
+
+        return _generic_matmatmul!(C, wrap(A, tA), wrap(B, tB), α, β)
+    end
+
+    """
+        generic_syrk!(C::StridedMatrix{T}, A::StridedVecOrMat{T}, conjugate::Bool, aat::Bool, α, β) where {T<:Number}
+
+    Computes syrk/herk for generic number types. If `conjugate` is false computes syrk, i.e.,
+    ``A transpose(A) α + C β`` if `aat` is true, and ``transpose(A) A α + C β`` otherwise.
+    If `conjugate` is true computes herk, i.e., ``A A' α + C β`` if `aat` is true, and
+    ``A' A α + C β`` otherwise.
+    """
+    function generic_syrk!(
+        C::StridedMatrix{T},
+        A::StridedVecOrMat{T},
+        conjugate::Bool,
+        aat::Bool,
+        α,
+        β
+    ) where {T<:Number}
+        require_one_based_indexing(C, A)
+        nC = checksquare(C)
+        m, n = size(A, 1), size(A, 2)
+        mA = aat ? m : n
+        if nC != mA
+            throw(DimensionMismatch(lazy"output matrix has size: $(size(C)), but should have size $((mA, mA))"))
+        end
+
+        _rmul_or_fill!(C, β)
+        @inbounds if !conjugate
+            if aat
+                for k ∈ 1:n, j ∈ 1:m
+                    αA_jk = A[j, k] * α
+                    for i ∈ 1:j
+                        C[i, j] += A[i, k] * αA_jk
+                    end
+                end
+            else
+                for j ∈ 1:n, i ∈ 1:j
+                    temp = A[1, i] * A[1, j]
+                    for k ∈ 2:m
+                        temp += A[k, i] * A[k, j]
+                    end
+                    C[i, j] += temp * α
+                end
+            end
+        else
+            if aat
+                for k ∈ 1:n, j ∈ 1:m
+                    αA_jk_bar = conj(A[j, k]) * α
+                    for i ∈ 1:j-1
+                        C[i, j] += A[i, k] * αA_jk_bar
+                    end
+                    C[j, j] += abs2(A[j, k]) * α
+                end
+            else
+                for j ∈ 1:n
+                    for i ∈ 1:j-1
+                        temp = conj(A[1, i]) * A[1, j]
+                        for k ∈ 2:m
+                            temp += conj(A[k, i]) * A[k, j]
+                        end
+                        C[i, j] += temp * α
+                    end
+                    temp = abs2(A[1, j])
+                    for k ∈ 2:m
+                        temp += abs2(A[k, j])
+                    end
+                    C[j, j] += temp * α
+                end
+            end
+        end
+        return C
+    end
+end
