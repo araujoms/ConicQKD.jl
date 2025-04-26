@@ -167,7 +167,7 @@ function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFlo
     exp_ρAB = constraint_expectations(T, ρAB, Nc)
     exp_sim = simulated_expectations(L, ξ, α)
     @constraint(model, exp_sim .== exp_ρAB)
-    ρA = partial_trace(T(1) * ρAB, 2, [4, Nc + 1])
+    ρA = partial_trace(ρAB, 2, [4, Nc + 1])
     @constraint(model, ρA == alice_part(α))
 
     G = gkraus(T, Nc)

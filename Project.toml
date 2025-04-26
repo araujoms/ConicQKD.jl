@@ -15,7 +15,7 @@ MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 BlockDiagonals = "0.1.42"
 Hypatia = "0.8.1"
 JuMP = "1.22"
-Ket = "0.1 - 0.5"
+Ket = "0.5.1"
 julia = "1.9"
 
 [extras]
