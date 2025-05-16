@@ -30,7 +30,7 @@ function svec(M::AbstractMatrix, ::Type{R}) where {R} #the weird stuff here is t
     d = size(M, 1)
     T = real(R)
     vec_dim = Cones.svec_length(R, d)
-    v = Vector{real(eltype(1 * M))}(undef, vec_dim)
+    v = Vector{real(eltype(M))}(undef, vec_dim)
     if R <: Real
         Cones.smat_to_svec!(v, 1 * M, sqrt(T(2)))
     else
@@ -39,16 +39,17 @@ function svec(M::AbstractMatrix, ::Type{R}) where {R} #the weird stuff here is t
     return v
 end
 export svec
+
 """
     smat(v::AbstractVector, ::Type{R})
 
-Maps a vector `v` with coefficient type `R` back into a Hermitian matrix M such that svec(M,`R`) = `v`.
+Maps a vector `v` back into a Hermitian matrix M with coefficient type `R` such that svec(M,`R`) = `v`.
 """
 function smat(v::AbstractVector, ::Type{R}) where {R} #the weird stuff here is to make it work with JuMP variables
     d = Cones.svec_side(R, length(v))
     T = real(R)
-    matrixeltype = R <: Real ? eltype(1 * v) : typeof(complex(v[1], 0))
-    M = Matrix{matrixeltype}(undef, d, d)
+    mtype = R <: Real ? real(eltype(v)) : promote_type(eltype(v), Complex{Int})
+    M = Matrix{mtype}(undef, d, d)
     if R <: Real
         Cones.svec_to_smat!(M, 1 * v, sqrt(T(2)))
     else
@@ -58,6 +59,7 @@ function smat(v::AbstractVector, ::Type{R}) where {R} #the weird stuff here is t
     return Hermitian(M)
 end
 export smat
+
 """
 Computes `skr` such that `skr*svec(x) = svec(mat*x*mat')` for real `mat` and Hermitian `x`
 """
