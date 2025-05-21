@@ -37,7 +37,7 @@ function hae_bb84_general(qz::T, qx::T) where {T<:AbstractFloat}
     Zhat = zkraus()
 
     vec_dim = Cones.svec_length(T, dim_ρ)
-    ρ_vec = svec(ρ, T)
+    ρ_vec = svec(ρ)
 
     @variable(model, h)
     @objective(model, Min, h / log(T(2)))
@@ -67,7 +67,7 @@ function hae_bb84_reducedz(qx::T) where {T<:AbstractFloat}
     Zhat = [V2'Zi * V for Zi in Z]
 
     vec_dim = Cones.svec_length(T, dim_ρ)
-    ρ_vec = svec(ρ, T)
+    ρ_vec = svec(ρ)
 
     @variable(model, h)
     @objective(model, Min, h / log(T(2)))
@@ -96,7 +96,7 @@ function hae_bb84_reducedx(qz::T) where {T<:AbstractFloat}
     Zhat = [Zi * V for Zi in Z]
 
     vec_dim = Cones.svec_length(T, dim_ρ)
-    ρ_vec = svec(ρ, T)
+    ρ_vec = svec(ρ)
 
     @variable(model, h)
     @objective(model, Min, h / log(T(2)))

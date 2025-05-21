@@ -88,7 +88,7 @@ function hae_overlap(v::T, d::Integer) where {T<:AbstractFloat}
     @constraint(model, tr(rho) == 1)
 
     vec_dim = Cones.svec_length(T, d^2)
-    rho_vec = svec(rho, T)
+    rho_vec = svec(rho)
 
     Ghat = [I(d^2)]
     Zhat = zgkraus(d)

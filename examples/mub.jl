@@ -89,7 +89,7 @@ function hae_mub(v::T, d::Integer, n::Integer = d + 1, α::T = T(9)/10; analytic
     @constraint(model, tr(ρ) == 1)
 
     vec_dim = Cones.svec_length(R, d^2)
-    ρ_vec = svec(ρ, R)
+    ρ_vec = svec(ρ)
 
     Ghat = [I(d^2)]
     Zhat = zgkraus(d)

@@ -22,41 +22,47 @@ function skron(X)
 end
 
 """
-    svec(M::AbstractMatrix, ::Type{R})
+    svec(M::AbstractMatrix)
 
-Produces the scaled vectorized version of a Hermitian matrix `M` with coefficient type `R`. The transformation preserves inner products, i.e., ⟨M,N⟩ = ⟨svec(M,R),svec(N,R)⟩.
+Produces the scaled vectorized version of a Hermitian matrix `M`. The transformation preserves inner products, i.e., ⟨M,N⟩ = ⟨svec(M),svec(N)⟩.
 """
-function svec(M::AbstractMatrix, ::Type{R}) where {R} #the weird stuff here is to make it work with JuMP variables
+function svec(M::AbstractMatrix{T}) where {T}#the weird stuff here is to make it work with JuMP variables
     d = size(M, 1)
-    T = real(R)
-    vec_dim = Cones.svec_length(R, d)
-    v = Vector{real(eltype(M))}(undef, vec_dim)
-    if R <: Real
-        Cones.smat_to_svec!(v, 1 * M, sqrt(T(2)))
+    numericalT = JuMP.value_type(T)
+    vec_dim = Cones.svec_length(numericalT, d)
+    v = Vector{real(T)}(undef, vec_dim)
+    root2 = sqrt(real(numericalT(2)))
+    if numericalT <: Real
+        Cones.smat_to_svec!(v, 1 * M, root2)
     else
-        Cones._smat_to_svec_complex!(v, M, sqrt(T(2)))
+        Cones._smat_to_svec_complex!(v, M, root2)
     end
     return v
 end
 export svec
 
 """
-    smat(v::AbstractVector, ::Type{R})
+    smat(v::AbstractVector)
 
-Maps a vector `v` back into a Hermitian matrix M with coefficient type `R` such that svec(M,`R`) = `v`.
+Maps a vector `v` back into a Hermitian matrix M such that svec(M) = `v`.
 """
-function smat(v::AbstractVector, ::Type{R}) where {R} #the weird stuff here is to make it work with JuMP variables
-    d = Cones.svec_side(R, length(v))
-    T = real(R)
-    mtype = R <: Real ? real(eltype(v)) : promote_type(eltype(v), Complex{Int})
+function smat(v::AbstractVector{T}) where {T} #the weird stuff here is to make it work with JuMP variables
+    n = length(v)
+    is_complex = (n != 1 && n == isqrt(n)^2)
+    d = is_complex ? Cones.svec_side(Complex, n) : Cones.svec_side(Real, n)
+    mtype = is_complex ? promote_type(eltype(v), Complex{Int}) : real(eltype(v))
     M = Matrix{mtype}(undef, d, d)
-    if R <: Real
-        Cones.svec_to_smat!(M, 1 * v, sqrt(T(2)))
+    numericalT = JuMP.value_type(T)
+    root2 = sqrt(real(numericalT(2)))
+    if !is_complex
+        Cones.svec_to_smat!(M, 1 * v, root2)
+        LinearAlgebra.copytri!(M, 'U')
+        return Symmetric(M)
     else
-        Cones._svec_to_smat_complex!(M, v, sqrt(T(2)))
+        Cones._svec_to_smat_complex!(M, v, root2)
+        LinearAlgebra.copytri!(M, 'U', true)
+        return Hermitian(M)
     end
-    LinearAlgebra.copytri!(M, 'U', true)
-    return Hermitian(M)
 end
 export smat
 

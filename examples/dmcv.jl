@@ -181,7 +181,7 @@ function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFlo
     blocks = [(i-1)*block_size+1:i*block_size for i = 1:4]
 
     vec_dim = Cones.svec_length(Complex, dim_ρAB)
-    ρAB_vec = svec(ρAB, Complex{T})
+    ρAB_vec = svec(ρAB)
 
     @variable(model, h)
     @objective(model, Min, h / log(T(2)))
@@ -224,7 +224,7 @@ function hbe_dmcv_reduced(Nc::Integer, L::T, α::T) where {T<:AbstractFloat}
     blocks = [(i-1)*block_size+1:i*block_size for i = 1:4]
 
     vec_dim = Cones.svec_length(Complex, dim_σAB)
-    σAB_vec = svec(σAB, Complex{T})
+    σAB_vec = svec(σAB)
 
     @variable(model, h)
     @objective(model, Min, h / log(T(2)))

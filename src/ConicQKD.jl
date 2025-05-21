@@ -4,6 +4,8 @@ using Hypatia
 using LinearAlgebra
 using GenericLinearAlgebra
 
+import JuMP
+
 import Hypatia.RealOrComplex
 import Hypatia.Optimizer
 using Hypatia.Cones
