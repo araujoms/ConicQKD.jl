@@ -146,7 +146,7 @@ end
 
 """
 Computes the matrix representation of the linear map
-ξ ↦ ∑ᵢⱼ Kⱼ'*(Γ .* (Kᵢ*ξ*Kᵢ')*Kⱼ
+ξ ↦ ∑ᵢⱼ Kⱼ*(Γ .* (Kᵢ'*ξ*Kᵢ))*Kⱼ'
 acting on svec(ξ). It corresponds to the Hessian of a spectral function
 with first divided differences matrix Γ.
 """
@@ -189,7 +189,7 @@ end
 
 """
 Computes the matrix representation of the linear map
-ξ ↦ K'*(Γ .* (K*ξ*K')*K
+ξ ↦ K*(Γ .* (K'*ξ*K))*K'
 acting on svec(ξ). It corresponds to the Hessian of a spectral function
 with first divided differences matrix Γ.
 """
