@@ -236,9 +236,10 @@ function update_feas(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     applykraus!.(cone.Zρ, cone.Zk, Ref(Hermitian(cone.ρ)), cone.Zρmat)
 
     if isposdef(Hermitian(cone.ρ))
+        cone.ρ_fact = cone.is_G_identity ? cone.Gρ_fact : eigen(Hermitian(cone.ρ))
         cone.Gρ_fact = eigen(Hermitian(cone.Gρ))
         cone.Zρ_fact = eigen.(Hermitian.(cone.Zρ))
-        if isposdef(cone.Gρ_fact) && all(isposdef.(cone.Zρ_fact)) #necessary because of numerical error
+        if isposdef(cone.ρ_fact) && isposdef(cone.Gρ_fact) && all(isposdef.(cone.Zρ_fact)) #necessary because of numerical error
             Gρ_λ = cone.Gρ_fact.values
             Zρ_λ = [fact.values for fact in cone.Zρ_fact]
             @. cone.Gρ_λ_log = log(Gρ_λ)
@@ -301,7 +302,6 @@ function update_grad(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
 
     @. @views g[cone.ρ_idxs] = -zi * dzdρ
 
-    cone.ρ_fact = cone.is_G_identity ? cone.Gρ_fact : eigen(Hermitian(cone.ρ))
     (ρ_λ, ρ_U) = cone.ρ_fact
     cone.ρ_λ_inv .= inv.(ρ_λ)
     spectral_outer!(cone.ρ_inv, ρ_U, cone.ρ_λ_inv, cone.mat)
