@@ -1,3 +1,5 @@
+using Test
+
 mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     use_dual_barrier::Bool
     dim::Int
@@ -46,9 +48,9 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Zk::Vector{Vector{Matrix{R}}}
     Gadj::Matrix{T}
     Zadj::Vector{Matrix{T}}
-    ρ_fact::Eigen{R}
-    Gρ_fact::Eigen{R}
-    Zρ_fact::Vector{Eigen{R}}
+    ρ_fact::Eigen{R, T, Matrix{R}, Vector{T}}
+    Gρ_fact::Eigen{R, T, Matrix{R}, Vector{T}}
+    Zρ_fact::Vector{Eigen{R, T, Matrix{R}, Vector{T}}}
     ρ_inv::Matrix{R}
     ρ_λ_inv::Vector{T}
     Gρ_λ_log::Vector{T}
@@ -236,8 +238,8 @@ function update_feas(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     applykraus!.(cone.Zρ, cone.Zk, Ref(Hermitian(cone.ρ)), cone.Zρmat)
 
     if isposdef(Hermitian(cone.ρ))
-        cone.ρ_fact = cone.is_G_identity ? cone.Gρ_fact : eigen(Hermitian(cone.ρ))
         cone.Gρ_fact = eigen(Hermitian(cone.Gρ))
+        cone.ρ_fact = cone.is_G_identity ? cone.Gρ_fact : eigen(Hermitian(cone.ρ))
         cone.Zρ_fact = eigen.(Hermitian.(cone.Zρ))
         if isposdef(cone.ρ_fact) && isposdef(cone.Gρ_fact) && all(isposdef.(cone.Zρ_fact)) #necessary because of numerical error
             Gρ_λ = cone.Gρ_fact.values
