@@ -9,7 +9,7 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     is_complex::Bool
     are_blocks_small::Bool
     nblocks::Int
-    blocks::Vector
+    blocks::Vector{UnitRange{Int}}
 
     point::Vector{T}
     dual_point::Vector{T}
@@ -90,7 +90,7 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         Gkraus::Vector{<:AbstractMatrix},
         Zkraus::Vector{<:AbstractMatrix},
         dim::Int;
-        blocks::Vector{<:AbstractVector} = [1:size(Zkraus[1], 1)],
+        blocks::Vector{UnitRange{Int}} = [1:size(Zkraus[1], 1)],
         use_dual::Bool = false
     ) where {T<:Real,R<:RealOrComplex{T}}
         @assert dim > 1

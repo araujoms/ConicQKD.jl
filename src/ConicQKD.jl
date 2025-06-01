@@ -51,14 +51,14 @@ struct EpiQKDTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
     Gkraus::Vector{<:AbstractMatrix}
     Zkraus::Vector{<:AbstractMatrix}
     dim::Int
-    blocks::Vector{<:AbstractVector}
+    blocks::Vector{UnitRange{Int}}
     use_dual::Bool
 
     function EpiQKDTriCone{T,R}(
         Gkraus::Vector{<:AbstractMatrix},
         Zkraus::Vector{<:AbstractMatrix},
         dim::Int;
-        blocks::Vector{<:AbstractVector} = [1:size(Zkraus[1], 1)],
+        blocks::Vector{UnitRange{Int}} = [1:size(Zkraus[1], 1)],
         use_dual::Bool = false
     ) where {T<:Real,R<:RealOrComplex{T}}
         new{T,R}(Gkraus, Zkraus, dim, blocks, use_dual)
@@ -83,7 +83,7 @@ struct EpiRenyiTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
     Zkraus::Vector{<:AbstractMatrix}
     dim::Int
     S::Union{AbstractMatrix, UniformScaling}
-    blocks::Vector{<:AbstractVector}
+    blocks::Vector{UnitRange{Int}}
     use_dual::Bool
 
     function EpiRenyiTriCone{T,R}(
@@ -92,7 +92,7 @@ struct EpiRenyiTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
         Zkraus::Vector{<:AbstractMatrix},
         dim::Int;
         S::Union{AbstractMatrix, UniformScaling} = I,
-        blocks::Vector{<:AbstractVector} = [1:size(Zkraus[1], 1)],
+        blocks::Vector{UnitRange{Int}} = [1:size(Zkraus[1], 1)],
         use_dual::Bool = false
     ) where {T<:Real,R<:RealOrComplex{T}}
         new{T,R}(α, Gkraus, Zkraus, dim, S, blocks, use_dual)

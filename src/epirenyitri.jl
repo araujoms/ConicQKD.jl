@@ -11,7 +11,7 @@ mutable struct EpiRenyiTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     is_complex::Bool
     are_blocks_small::Bool
     nblocks::Int
-    blocks::Vector
+    blocks::Vector{UnitRange{Int}}
 
     point::Vector{T}
     dual_point::Vector{T}
@@ -106,7 +106,7 @@ mutable struct EpiRenyiTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         Zkraus::Vector{<:AbstractMatrix},
         dim::Int;
         S::Union{AbstractMatrix,UniformScaling},
-        blocks::Vector{<:AbstractVector} = [1:size(Zkraus[1], 1)],
+        blocks::Vector{UnitRange{Int}} = [1:size(Zkraus[1], 1)],
         use_dual::Bool = false
     ) where {T<:Real,R<:RealOrComplex{T}}
         @assert dim > 1
