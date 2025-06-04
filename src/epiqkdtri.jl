@@ -1,5 +1,3 @@
-using Test
-
 mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     use_dual_barrier::Bool
     dim::Int
