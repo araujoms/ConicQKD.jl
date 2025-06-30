@@ -116,12 +116,12 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{Complex{T
                 for i ∈ 1:(j-1)
                     a = mat[i, k] * conj(mat[j, l])
                     b = conj(mat[i, l]) * mat[j, k]
-                    Cones.spectral_kron_element!(skr, row_idx, col_idx, a, b)
+                    Cones.spectral_kron_element!(skr, row_idx, col_idx, conj(a), conj(b))
                     row_idx += 2
                 end
                 c = rt2 * mat[j, k] * conj(mat[j, l])
                 skr[row_idx, col_idx] = real(c)
-                skr[row_idx, col_idx+1] = imag(c)
+                skr[row_idx, col_idx+1] = -imag(c)
                 row_idx += 1
             end
             col_idx += 2
@@ -132,7 +132,7 @@ function symm_kron_full!(skr::AbstractMatrix{T}, mat::AbstractVecOrMat{Complex{T
             for i ∈ 1:(j-1)
                 c = rt2 * mat[i, l] * conj(mat[j, l])
                 skr[row_idx, col_idx] = real(c)
-                skr[row_idx+1, col_idx] = -imag(c)
+                skr[row_idx+1, col_idx] = imag(c)
                 row_idx += 2
             end
             skr[row_idx, col_idx] = abs2(mat[j, l])
@@ -146,11 +146,11 @@ end
 
 """
 Computes the matrix representation of the linear map
-ξ ↦ ∑ᵢⱼ Kⱼ*(Γ .* (Kᵢ'*ξ*Kᵢ))*Kⱼ'
-acting on svec(ξ). It corresponds to the Hessian of a spectral function
-with first divided differences matrix Γ.
+ξ ↦ ∑ᵢⱼ Kⱼ'*(Γ .* (Kᵢ*ξ*Kᵢ')*Kⱼ
+acting on svec(ξ). It corresponds to the Fréchet derivative of a spectral function
+with first divided differences matrix Γ(Λ) on the point ∑ᵢKᵢ'*Λ*Kᵢ
 """
-function hessian_spectral_function!(
+function derivative_spectral_function!(
     skr::AbstractMatrix{T},
     Γ::Matrix{T},
     K::Vector{Matrix{R}},
@@ -160,9 +160,8 @@ function hessian_spectral_function!(
     temp4::Matrix{R},
     rt2::T
 ) where {T<:Real,R<:RealOrComplex{T}}
-    @assert issymmetric(Γ) # must be symmetric (wrapper is less efficient)
     rt2i = inv(rt2)
-    scals = (R <: Complex{T} ? [rt2i, rt2i * im] : [rt2i]) # real and imag parts
+    scals = (R <: Complex{T} ? [rt2i, -rt2i * im] : [rt2i]) # real and imag parts
     col_idx = 0
     @inbounds for j ∈ 1:size(K[1], 2)
         for i ∈ 1:(j-1), scal ∈ scals
@@ -189,11 +188,11 @@ end
 
 """
 Computes the matrix representation of the linear map
-ξ ↦ K*(Γ .* (K'*ξ*K))*K'
-acting on svec(ξ). It corresponds to the Hessian of a spectral function
-with first divided differences matrix Γ.
+ξ ↦ K'*(Γ .* (K*ξ*K')*K
+acting on svec(ξ). It corresponds to the Fréchet derivative a spectral function
+with first divided differences matrix Γ(Λ) on the point K'*Λ*K
 """
-function hessian_spectral_function!(
+function derivative_spectral_function!(
     skr::AbstractMatrix{T},
     Γ::Matrix{T},
     K::Matrix{R},
@@ -203,9 +202,8 @@ function hessian_spectral_function!(
     temp4::Matrix{R},
     rt2::T
 ) where {T<:Real,R<:RealOrComplex{T}}
-    @assert issymmetric(Γ) # must be symmetric (wrapper is less efficient)
     rt2i = inv(rt2)
-    scals = (R <: Complex{T} ? [rt2i, rt2i * im] : [rt2i]) # real and imag parts
+    scals = (R <: Complex{T} ? [rt2i, -rt2i * im] : [rt2i]) # real and imag parts
     col_idx = 0
     @inbounds for j ∈ 1:size(K, 2)
         @views K_j = K[:, j]
@@ -286,7 +284,7 @@ end
 if VERSION.minor == 12
     import LinearAlgebra.generic_matmatmul_wrapper!
     import LinearAlgebra:
-        BlasFlag, lapack_size, _valtypeparam, copytri!, require_one_based_indexing, checksquare, _rmul_or_fill!
+        BlasFlag, lapack_size, _valtypeparam, copytri!, require_one_based_indexing, checksquare, _rmul_or_fill!, _generic_matmatmul!, wrap
     Base.@constprop :aggressive function generic_matmatmul_wrapper!(
         C::StridedMatrix{T},
         tA,

@@ -27,7 +27,6 @@ import ConicQKD.kraus2matrix
 import ConicQKD.skron
 import ConicQKD.svec
 import ConicQKD.smat
-import ConicQKD.symm_kron_full!
 
 Random.randn(::Type{BigFloat}, dims::Integer...) = BigFloat.(randn(dims...))
 
@@ -277,6 +276,7 @@ end
 # cone utilities
 
 logdet_pd(W::Hermitian) = logdet(cholesky!(copy(W)))
+logdet_pd(W::Symmetric) = logdet(cholesky!(copy(W)))
 
 # EpiQKDTri
 function von_neumann_entropy(rho)
@@ -332,11 +332,11 @@ end
 
 function random_point!(point, cone::EpiQKDTri{T,R}) where {T,R}
     rho = random_state(R, cone.d)
-    Grho = smat(cone.G * svec(rho, R), R)
-    Zrho = smat.(cone.Z .* Ref(svec(rho, R)), Ref(R))
+    Grho = smat(cone.G * svec(rho))
+    Zrho = smat.(cone.Z .* Ref(svec(rho)))
     relative_entropy = -von_neumann_entropy(Grho) + sum(von_neumann_entropy.(Zrho))
     point[1] = 2 * relative_entropy
-    point[2:end] .= svec(rho, R)
+    point[2:end] .= svec(rho)
 end
 
 function test_oracles(cone::Type{EpiQKDTri{T,R}}) where {T,R}
@@ -353,9 +353,9 @@ function test_barrier(cone::Type{EpiQKDTri{T,R}}) where {T,R}
 
     function barrier(point)
         u = point[1]
-        rhoH = smat(point[rho_idxs], R)
-        GrhoH = smat(G * point[rho_idxs], R)
-        ZrhoH = smat(Z * point[rho_idxs], R)
+        rhoH = smat(point[rho_idxs])
+        GrhoH = smat(G * point[rho_idxs])
+        ZrhoH = smat(Z * point[rho_idxs])
         relative_entropy = -von_neumann_entropy(GrhoH) + von_neumann_entropy(ZrhoH)
         return -real(log(u - relative_entropy)) - logdet_pd(rhoH)
     end
@@ -370,13 +370,13 @@ end
 
 function random_point!(point, cone::EpiRenyiTri{T,R}) where {T,R}
     rho = random_state(R, cone.d)
-    Grho = smat(cone.G * svec(rho, R), R)
+    Grho = smat(cone.G * svec(rho))
     S = cone.S
-    Zrhoblocks = smat.(cone.Z .* Ref(svec(rho, R)), Ref(R))
+    Zrhoblocks = smat.(cone.Z .* Ref(svec(rho)))
     Zrho = Hermitian(Matrix(BlockDiagonals.BlockDiagonal(Zrhoblocks)))
     r = renyi2(Grho, Zrho, cone.α, S)
     point[1] = cone.sα * r + 0.1
-    point[2:end] .= svec(rho, R)
+    point[2:end] .= svec(rho)
 end
 
 function test_oracles(cone::Type{EpiRenyiTri{T,R}}) where {T,R}
@@ -412,9 +412,9 @@ function test_barrier(cone::Type{EpiRenyiTri{T,R}}) where {T,R}
 
     function barrier(point)
         u = point[1]
-        rhoH = smat(point[rho_idxs], R)
-        GrhoH = smat(G * point[rho_idxs], R)
-        ZrhoH = smat(Z * point[rho_idxs], R)
+        rhoH = smat(point[rho_idxs])
+        GrhoH = smat(G * point[rho_idxs])
+        ZrhoH = smat(Z * point[rho_idxs])
         r = renyi2(GrhoH, ZrhoH, α, S)
         return -real(log(u - sα * r)) - logdet_pd(rhoH)
     end

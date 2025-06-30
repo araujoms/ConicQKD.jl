@@ -13,12 +13,13 @@ using Test
 using Printf
 import Hypatia.Cones
 import ConicQKD
+import DoubleFloats
 include(joinpath(@__DIR__, "cone.jl"))
 
 function cone_types(T::Type{<:Real})
     cones_T = [
-#        ConicQKD.EpiQKDTri{T,T}
-#        ConicQKD.EpiQKDTri{T,Complex{T}}
+        ConicQKD.EpiQKDTri{T,T}
+        ConicQKD.EpiQKDTri{T,Complex{T}}
         ConicQKD.EpiRenyiTri{T,T}
         ConicQKD.EpiRenyiTri{T,Complex{T}}
     ]
@@ -32,6 +33,7 @@ end
         real_types = [
             Float64,
             Float32,
+            DoubleFloats.Double64,
             # BigFloat,
         ]
         @testset "$cone" for T in real_types, cone in cone_types(T)

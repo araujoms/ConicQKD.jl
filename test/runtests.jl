@@ -13,7 +13,7 @@ using Test
 using Printf
 using Hypatia
 
-test_files = ["cone"]
+test_files = ["array", "cone"]
 
 println()
 @info("starting all tests")
@@ -21,7 +21,7 @@ println()
 timings = Dict{String,Float64}()
 
 @testset "all tests" begin
-    all_test_time = @elapsed for t in test_files
+    all_test_time = @elapsed for t ∈ test_files
         @info("starting $t tests")
         test_time = @elapsed include("run$(t)tests.jl")
         flush(stdout)

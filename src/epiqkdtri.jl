@@ -480,7 +480,7 @@ function update_inv_hess_aux(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrCompl
         else
             Gρ_U_adj_Gk = [Gρ_U' * Gki for Gki in Gk]
         end
-        hessian_spectral_function!(d2zdρ2, cone.Δ2G, Gρ_U_adj_Gk, cone.Gmat2, cone.Gmat3, cone.Gρmat, cone.mat, rt2)
+        derivative_spectral_function!(d2zdρ2, cone.Δ2G, Gρ_U_adj_Gk, cone.Gmat2, cone.Gmat3, cone.Gρmat, cone.mat, rt2)
         d2zdρ2 .*= -1
 
         if all(length.(Zk) .== 1)
@@ -489,7 +489,7 @@ function update_inv_hess_aux(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrCompl
             Zρ_U_adj_Zk = [[Zρ_U[i]' * Zk[i][j] for j = 1:length(Zk[i])] for i = 1:cone.nblocks]
         end
         for i = 1:cone.nblocks
-            hessian_spectral_function!(cone.big_mat, cone.Δ2Z[i], Zρ_U_adj_Zk[i], cone.Zmat2[i], cone.Zmat3[i], cone.Zρmat[i], cone.mat, rt2)
+            derivative_spectral_function!(cone.big_mat, cone.Δ2Z[i], Zρ_U_adj_Zk[i], cone.Zmat2[i], cone.Zmat3[i], cone.Zρmat[i], cone.mat, rt2)
             d2zdρ2 .+= cone.big_mat
         end
     end
