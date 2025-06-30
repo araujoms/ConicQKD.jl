@@ -36,9 +36,9 @@ import ConicQKD: svec, smat, skron, derivative_spectral_function!
             temp4 = zeros(R, din, din)
             derivative_spectral_function!(skr, Γ, K, temp1, temp2, temp3, temp4, sqrt(T(2)))
             @test skr * Mvec ≈ svec(K' * (Γ .* (K * M * K')) * K)
-            Kvec = [randn(R, dout, din) for _ in 1:2]
+            Kvec = [randn(R, dout, din) for _ ∈ 1:2]
             derivative_spectral_function!(skr, Γ, Kvec, temp1, temp2, temp3, temp4, sqrt(T(2)))
-            @test skr * Mvec ≈ sum(svec(Kj' * (Γ .* (Ki * M * Ki')) * Kj) for Ki in Kvec, Kj in Kvec)
+            @test skr * Mvec ≈ sum(svec(Kj' * (Γ .* (Ki * M * Ki')) * Kj) for Ki ∈ Kvec, Kj ∈ Kvec)
         end
     end
 end;

@@ -284,7 +284,15 @@ end
 if VERSION.minor == 12
     import LinearAlgebra.generic_matmatmul_wrapper!
     import LinearAlgebra:
-        BlasFlag, lapack_size, _valtypeparam, copytri!, require_one_based_indexing, checksquare, _rmul_or_fill!, _generic_matmatmul!, wrap
+        BlasFlag,
+        lapack_size,
+        _valtypeparam,
+        copytri!,
+        require_one_based_indexing,
+        checksquare,
+        _rmul_or_fill!,
+        _generic_matmatmul!,
+        wrap
     Base.@constprop :aggressive function generic_matmatmul_wrapper!(
         C::StridedMatrix{T},
         tA,

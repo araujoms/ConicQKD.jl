@@ -55,9 +55,9 @@ mutable struct EpiRenyiTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Zkbig::Vector{Matrix{R}}
     Gadj::Matrix{T}
     Zadj::Vector{Matrix{T}}
-    ρ_fact::Eigen{R, T, Matrix{R}, Vector{T}}
-    Gρ_fact::Eigen{R, T, Matrix{R}, Vector{T}}
-    Zρ_fact::Vector{Eigen{R, T, Matrix{R}, Vector{T}}}
+    ρ_fact::Eigen{R,T,Matrix{R},Vector{T}}
+    Gρ_fact::Eigen{R,T,Matrix{R},Vector{T}}
+    Zρ_fact::Vector{Eigen{R,T,Matrix{R},Vector{T}}}
     ZG_fact::SVD{R,T,Matrix{R},Vector{T}}
     ρ_inv::Matrix{R}
     ρ_λ_inv::Vector{T}

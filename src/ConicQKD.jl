@@ -82,7 +82,7 @@ struct EpiRenyiTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
     Gkraus::Vector{<:AbstractMatrix}
     Zkraus::Vector{<:AbstractMatrix}
     dim::Int
-    S::Union{AbstractMatrix, UniformScaling}
+    S::Union{AbstractMatrix,UniformScaling}
     blocks::Vector{UnitRange{Int}}
     use_dual::Bool
 
@@ -91,7 +91,7 @@ struct EpiRenyiTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
         Gkraus::Vector{<:AbstractMatrix},
         Zkraus::Vector{<:AbstractMatrix},
         dim::Int;
-        S::Union{AbstractMatrix, UniformScaling} = I,
+        S::Union{AbstractMatrix,UniformScaling} = I,
         blocks::Vector{UnitRange{Int}} = [1:size(Zkraus[1], 1)],
         use_dual::Bool = false
     ) where {T<:Real,R<:RealOrComplex{T}}
@@ -103,10 +103,19 @@ export EpiRenyiTriCone
 MOI.dimension(cone::EpiRenyiTriCone) = cone.dim
 
 function Hypatia.cone_from_moi(::Type{T}, cone::EpiRenyiTriCone{T,R}) where {T<:Real,R<:RealOrComplex{T}}
-    return EpiRenyiTri{T,R}(cone.α, cone.Gkraus, cone.Zkraus, cone.dim; S = cone.S, blocks = cone.blocks, use_dual = cone.use_dual)
+    return EpiRenyiTri{T,R}(
+        cone.α,
+        cone.Gkraus,
+        cone.Zkraus,
+        cone.dim;
+        S = cone.S,
+        blocks = cone.blocks,
+        use_dual = cone.use_dual
+    )
 end
 
-const NewCones{T<:Real} = Union{EpiQKDTriCone{T,T},EpiQKDTriCone{T,Complex{T}},EpiRenyiTriCone{T,T},EpiRenyiTriCone{T,Complex{T}}}
+const NewCones{T<:Real} =
+    Union{EpiQKDTriCone{T,T},EpiQKDTriCone{T,Complex{T}},EpiRenyiTriCone{T,T},EpiRenyiTriCone{T,Complex{T}}}
 
 const NewSupportedCone{T<:Real} = Union{Hypatia.SupportedCone{T},NewCones{T}}
 
