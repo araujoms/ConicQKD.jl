@@ -7,12 +7,12 @@ import Hypatia.Cones
 
 function zmap(ρ)
     K = zkraus()
-    Zρ = sum(K[i] * ρ * K[i] for i = 1:2)
+    Zρ = sum(K[i] * ρ * K[i] for i ∈ 1:2)
     return Zρ
 end
 
 function zkraus()
-    K = [kron(proj(i, 2), I(2)) for i = 1:2]
+    K = [kron(proj(i, 2), I(2)) for i ∈ 1:2]
     return K
 end
 
@@ -64,7 +64,7 @@ function hae_bb84_reducedz(qx::T) where {T<:AbstractFloat}
     Ghat = [I(dim_ρ)]
     Z = zkraus()
     V2 = [[1, 0, 0, 0] [0, 0, 0, 1]]
-    Zhat = [V2'Zi * V for Zi in Z]
+    Zhat = [V2'Zi * V for Zi ∈ Z]
 
     vec_dim = Cones.svec_length(T, dim_ρ)
     ρ_vec = svec(ρ)
@@ -93,7 +93,7 @@ function hae_bb84_reducedx(qz::T) where {T<:AbstractFloat}
     V = isometryx(T)
     Ghat = [I(dim_ρ)]
     Z = zkraus()
-    Zhat = [Zi * V for Zi in Z]
+    Zhat = [Zi * V for Zi ∈ Z]
 
     vec_dim = Cones.svec_length(T, dim_ρ)
     ρ_vec = svec(ρ)

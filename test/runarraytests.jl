@@ -13,7 +13,7 @@ using Test
 using Printf
 using LinearAlgebra
 import Hypatia.Cones
-import ConicQKD: svec, smat, skron, derivative_spectral_function!
+import ConicQKD: svec, smat, skron, d_spectral!
 
 @testset "array tests" begin
     real_types = [Float64, Float32, BigFloat]
@@ -34,10 +34,10 @@ import ConicQKD: svec, smat, skron, derivative_spectral_function!
             temp2 = zeros(R, dout, dout)
             temp3 = zeros(R, dout, din)
             temp4 = zeros(R, din, din)
-            derivative_spectral_function!(skr, Γ, K, temp1, temp2, temp3, temp4, sqrt(T(2)))
+            d_spectral!(skr, Γ, K, temp1, temp2, temp3, temp4, sqrt(T(2)))
             @test skr * Mvec ≈ svec(K' * (Γ .* (K * M * K')) * K)
             Kvec = [randn(R, dout, din) for _ ∈ 1:2]
-            derivative_spectral_function!(skr, Γ, Kvec, temp1, temp2, temp3, temp4, sqrt(T(2)))
+            d_spectral!(skr, Γ, Kvec, temp1, temp2, temp3, temp4, sqrt(T(2)))
             @test skr * Mvec ≈ sum(svec(Kj' * (Γ .* (Ki * M * Ki')) * Kj) for Ki ∈ Kvec, Kj ∈ Kvec)
         end
     end

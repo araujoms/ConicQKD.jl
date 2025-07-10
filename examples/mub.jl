@@ -16,12 +16,12 @@ end
 "Decoherence map acting on Alice's key storage"
 function zgmap(rho::AbstractMatrix, d::Integer)
     K = zgkraus(d)
-    zgrho = sum(K[i] * rho * K[i] for i = 1:d)
+    zgrho = sum(K[i] * rho * K[i] for i ∈ 1:d)
     return Hermitian(zgrho)
 end
 
 function zgkraus(d::Integer)
-    K = [kron(proj(i, d), I(d)) for i = 1:d]
+    K = [kron(proj(i, d), I(d)) for i ∈ 1:d]
     return K
 end
 
@@ -41,8 +41,8 @@ function corr(
     if T != Float64 && !analytical_mub
         @warn "To achieve higher precision analytical MUBs are needed."
     end
-    b = [zeros(Complex{T}, d^2, d^2) for i = 1:n]
-    for i = 1:n, j = 1:d
+    b = [zeros(Complex{T}, d^2, d^2) for i ∈ 1:n]
+    for i ∈ 1:n, j ∈ 1:d
         temp = ketbra(mubs[i][:, j])
         b[i] += kron(temp, transpose(temp))
     end
@@ -72,7 +72,14 @@ rate_mub_analytic(v::Real, d::Integer, n::Integer = d + 1) = hae_mub_analytic(v,
 hab_mub(v::T, d) where {T<:AbstractFloat} = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(T(d) - 1)
 
 "Computes the conditional entropy H(A|E) numerically for an isotropic state of dimension `d` with visibility `v`, using `n` MUBs. `n` must respect 2 ≤ `n` ≤ `d` + 1. `analytical_mub` specifies whether the MUBs are analytical or numerical."
-function hae_mub(v::T, d::Integer, n::Integer = d + 1, α::T = T(9)/10; analytical_mub::Bool = true) where {T<:AbstractFloat}
+function hae_mub(
+    v::T,
+    d::Integer,
+    n::Integer = d + 1,
+    α::T = T(9) / 10;
+    analytical_mub::Bool = true,
+    renyi::Bool = false
+) where {T<:AbstractFloat}
     is_complex = true
     model = GenericModel{T}()
     if is_complex
@@ -93,15 +100,25 @@ function hae_mub(v::T, d::Integer, n::Integer = d + 1, α::T = T(9)/10; analytic
 
     Ghat = [I(d^2)]
     Zhat = zgkraus(d)
-    blocks = [(i-1)*d+1:i*d for i = 1:d]
+    blocks = [(i-1)*d+1:i*d for i ∈ 1:d]
 
     @variable(model, h)
-    @objective(model, Min, h / log(T(2)))
-    @constraint(model, [h; ρ_vec] in EpiRenyiTriCone{T,R}(α, Ghat, Zhat, 1 + vec_dim; blocks))
+    @objective(model, Min, h)
+    if renyi
+        β = inv(2 - inv(α))
+        @constraint(model, [h; ρ_vec] in EpiRenyiTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+    else
+        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhat, 1 + vec_dim; blocks))
+    end
 
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
     optimize!(model)
+    if renyi
+        return log2(value(h)) / (β - 1)
+    else
+        return value(h) / log(T(2))
+    end
     return objective_value(model)
     return solve_time(model)
 end

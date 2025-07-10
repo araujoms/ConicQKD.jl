@@ -28,9 +28,9 @@ end
 function joint_probability(L::T, ξ::T, α::T) where {T<:AbstractFloat}
     η = 10^(-2 * L / 100)
     pAB = zeros(T, 4, 4)
-    for x = 0:3
+    for x ∈ 0:3
         pars = [ξ, η, x, α]
-        for z = 0:3
+        for z ∈ 0:3
             bounds = ([T(0), T(π) * (2 * z - 1) / 4], [T(Inf), T(π) * (2 * z + 1) / 4])
             pAB[x+1, z+1] = integrate(bounds, pars)
         end
@@ -54,18 +54,18 @@ function hbe_dmcv_analytic(L::T, α::T) where {T<:AbstractFloat}
             sqrt(cosh((1 - η) * α^2) - cos((1 - η) * α^2)),
             sqrt(sinh((1 - η) * α^2) - sin((1 - η) * α^2))
         ]
-    eve_states = [[c[j+1] * exp(im * T(π) * i * j / 2) for j = 0:3] for i = 0:3]
+    eve_states = [[c[j+1] * exp(im * T(π) * i * j / 2) for j ∈ 0:3] for i ∈ 0:3]
     pAB = joint_probability(L, T(0), α)
     pA = sum(pAB; dims = 2)
-    ρE = sum(pA[x] * ketbra(eve_states[x]) for x = 1:4)
-    ρBE = sum(pAB[x, z] * kron(proj(z, 4), ketbra(eve_states[x])) for x = 1:4, z = 1:4)
+    ρE = sum(pA[x] * ketbra(eve_states[x]) for x ∈ 1:4)
+    ρBE = sum(pAB[x, z] * kron(proj(z, 4), ketbra(eve_states[x])) for x ∈ 1:4, z ∈ 1:4)
     return entropy(ρBE) - entropy(ρE)
 end
 
 function simulated_expectations(L::T, ξ::T, α::T) where {T<:Real}
     η = 10^(-2 * L / 100)
     exp_sim = zeros(T, 4, 4)
-    for x = 0:3
+    for x ∈ 0:3
         exp_sim[x+1, 1] = sqrt(2 * η) * real(im^x * α)
         exp_sim[x+1, 2] = sqrt(2 * η) * imag(im^x * α)
         exp_sim[x+1, 3] = η * α^2 + η * ξ / 2
@@ -77,7 +77,7 @@ end
 
 function alice_part(α::T) where {T<:Real}
     ρ = zeros(Complex{T}, 4, 4)
-    for j = 0:3, i = 0:j
+    for j ∈ 0:3, i ∈ 0:j
         ρ[i+1, j+1] = 0.25 * exp(-α^2 * (1 - (1.0 * im)^(i - j)))
     end
     return Hermitian(ρ)
@@ -97,10 +97,10 @@ function sinkpi4(::Type{T}, k::Integer) where {T<:Real} #computes sin(k*π/4) wi
 end
 
 function region_operators(::Type{T}, Nc::Integer) where {T<:Real}
-    R = [Hermitian(zeros(Complex{T}, Nc + 1, Nc + 1)) for z = 0:3]
-    for z = 0:2
-        for n = 0:Nc
-            for m = n:Nc
+    R = [Hermitian(zeros(Complex{T}, Nc + 1, Nc + 1)) for z ∈ 0:3]
+    for z ∈ 0:2
+        for n ∈ 0:Nc
+            for m ∈ n:Nc
                 if n == m
                     R[z+1][n+1, m+1] = T(1) / 4
                 else
@@ -111,7 +111,7 @@ function region_operators(::Type{T}, Nc::Integer) where {T<:Real}
             end
         end
     end
-    R[4] = I - sum(R[z+1] for z = 0:2)
+    R[4] = I - sum(R[z+1] for z ∈ 0:2)
     return R
 end
 
@@ -133,7 +133,7 @@ end
 
 function constraint_expectations(::Type{T}, ρ::AbstractMatrix, Nc::Integer) where {T<:Real}
     ops = heterodyne_operators(T, Nc)
-    bases_AB = [kron(proj(x + 1, 4), ops[z+1]) for x = 0:3, z = 0:3]
+    bases_AB = [kron(proj(x + 1, 4), ops[z+1]) for x ∈ 0:3, z ∈ 0:3]
     return real(dot.(Ref(ρ), bases_AB))
 end
 
@@ -145,17 +145,17 @@ end
 function gkraus(::Type{T}, Nc::Integer) where {T<:Real}
     sqrtbasis = sqrt.(region_operators(T, Nc))
     #    cleanup!.(sqrtbasis;tol=10^3*eps(T))
-    V = sum(kron(I(4), sqrtbasis[i], ket(i, 4)) for i = 1:4)
+    V = sum(kron(I(4), sqrtbasis[i], ket(i, 4)) for i ∈ 1:4)
     return V
 end
 
 function zmap(ρ::AbstractMatrix, Nc::Integer)
     K = zkraus(Nc)
-    return Hermitian(sum(K[i] * ρ * K[i] for i = 1:4))
+    return Hermitian(sum(K[i] * ρ * K[i] for i ∈ 1:4))
 end
 
 function zkraus(Nc::Integer)
-    K = [kron(I(4 * (Nc + 1)), proj(i, 4)) for i = 1:4]
+    K = [kron(I(4 * (Nc + 1)), proj(i, 4)) for i ∈ 1:4]
     return K
 end
 
@@ -173,19 +173,22 @@ function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFlo
     G = gkraus(T, Nc)
     Ghat = [I(dim_ρAB)]
     Z = zkraus(Nc)
-    Zhat = [Zi * G for Zi in Z]
+    Zhat = [Zi * G for Zi ∈ Z]
     permutation = vec(reshape(1:16*(Nc+1), 4, 4 * (Nc + 1))')
-    Zhatperm = [Zi[permutation, :] for Zi in Zhat]
+    Zhatperm = [Zi[permutation, :] for Zi ∈ Zhat]
 
     block_size = 4 * (Nc + 1)
-    blocks = [(i-1)*block_size+1:i*block_size for i = 1:4]
+    blocks = [(i-1)*block_size+1:i*block_size for i ∈ 1:4]
 
     vec_dim = Cones.svec_length(Complex, dim_ρAB)
     ρAB_vec = svec(ρAB)
 
     @variable(model, h)
     @objective(model, Min, h / log(T(2)))
-    @constraint(model, [h; ρAB_vec] in EpiRenyiTriCone{T,Complex{T}}(T(8)/10, Ghat, Zhatperm, 1 + vec_dim; S = G, blocks))
+    @constraint(
+        model,
+        [h; ρAB_vec] in EpiRenyiTriCone{T,Complex{T}}(T(8) / 10, Ghat, Zhatperm, 1 + vec_dim; S = G, blocks)
+    )
 
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
@@ -194,15 +197,15 @@ function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFlo
     return solve_time(model)
 end
 
-coherent(Nc::Integer, β::Number) = exp(-abs2(β) / 2) * [β^n / sqrt(factorial(n)) for n = 0:Nc]
-isometry(Nc::Integer, α::Real) = sum(kron(ket(x + 1, 4), coherent(Nc, im^x * α)) * ket(x + 1, 4)' for x = 0:3)
+coherent(Nc::Integer, β::Number) = exp(-abs2(β) / 2) * [β^n / sqrt(factorial(n)) for n ∈ 0:Nc]
+isometry(Nc::Integer, α::Real) = sum(kron(ket(x + 1, 4), coherent(Nc, im^x * α)) * ket(x + 1, 4)' for x ∈ 0:3)
 function hbe_dmcv_reduced(Nc::Integer, L::T, α::T) where {T<:AbstractFloat}
     dim_σAB = 4
     model = GenericModel{T}()
 
     η = 10^(-2 * L / 100)
     σAB = Matrix{Complex{T}}(undef, 4, 4)
-    for x2 = 0:3, x1 = 0:3
+    for x2 ∈ 0:3, x1 ∈ 0:3
         σAB[x1+1, x2+1] = 0.25 * exp(-α^2 * (1 - η) * (1 - (1.0 * im)^(x1 - x2)))
     end
     σAB = Hermitian(σAB)
@@ -211,17 +214,17 @@ function hbe_dmcv_reduced(Nc::Integer, L::T, α::T) where {T<:AbstractFloat}
     #    ρAB = Hermitian(V*σAB*V')
 
     sqrtbasis = sqrt.(region_operators(T, Nc))
-    states = [sqrtbasis[k] * coherent(Nc, im^x * sqrt(η) * α) for k = 1:4, x = 0:3]
+    states = [sqrtbasis[k] * coherent(Nc, im^x * sqrt(η) * α) for k ∈ 1:4, x ∈ 0:3]
     norms = norm.(states)
 
     Ghat = [I(dim_σAB)]
-    Zhat = [sum(norms[k, x] * kron(proj(x, 4), ket(k, 4)) for x = 1:4) for k = 1:4]
+    Zhat = [sum(norms[k, x] * kron(proj(x, 4), ket(k, 4)) for x ∈ 1:4) for k ∈ 1:4]
 
     permutation = vec(reshape(1:16, 4, 4)')
-    Zhatperm = [Zi[permutation, :] for Zi in Zhat]
+    Zhatperm = [Zi[permutation, :] for Zi ∈ Zhat]
 
     block_size = 4
-    blocks = [(i-1)*block_size+1:i*block_size for i = 1:4]
+    blocks = [(i-1)*block_size+1:i*block_size for i ∈ 1:4]
 
     vec_dim = Cones.svec_length(Complex, dim_σAB)
     σAB_vec = svec(σAB)

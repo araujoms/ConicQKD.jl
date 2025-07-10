@@ -150,7 +150,7 @@ Computes the matrix representation of the linear map
 acting on svec(ξ). It corresponds to the Fréchet derivative of a spectral function
 with first divided differences matrix Γ(Λ) on the point ∑ᵢKᵢ'*Λ*Kᵢ
 """
-function derivative_spectral_function!(
+function d_spectral!(
     skr::AbstractMatrix{T},
     Γ::Matrix{T},
     K::Vector{Matrix{R}},
@@ -192,7 +192,7 @@ Computes the matrix representation of the linear map
 acting on svec(ξ). It corresponds to the Fréchet derivative a spectral function
 with first divided differences matrix Γ(Λ) on the point K'*Λ*K
 """
-function derivative_spectral_function!(
+function d_spectral!(
     skr::AbstractMatrix{T},
     Γ::Matrix{T},
     K::Matrix{R},
@@ -279,6 +279,32 @@ function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector
     # make symmetric
     LinearAlgebra.copytri!(Δ2, 'U')
     return Δ2
+end
+
+function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vector{T}) where {T<:Real}
+    rteps = sqrt(eps(T))
+    d = length(λ)
+
+    @inbounds for k ∈ 1:d, j ∈ 1:k, i ∈ 1:j
+        λ_j = λ[j]
+        λ_k = λ[k]
+        λ_jk = λ_j - λ_k
+        if abs(λ_jk) < rteps
+            λ_i = λ[i]
+            λ_ij = λ_i - λ_j
+            if abs(λ_ij) < rteps
+                t = (d2fλ[i] + d2fλ[j] + d2fλ[k]) / 6
+            else
+                t = (Δ2[i, j] - Δ2[j, k]) / λ_ij
+            end
+        else
+            t = (Δ2[i, j] - Δ2[i, k]) / λ_jk
+        end
+
+        Δ3[i, j, k] = Δ3[i, k, j] = Δ3[j, i, k] = Δ3[j, k, i] = Δ3[k, i, j] = Δ3[k, j, i] = t
+    end
+
+    return Δ3
 end
 
 if VERSION.minor == 12
@@ -394,4 +420,56 @@ if VERSION.minor == 12
         end
         return C
     end
+end
+
+function Δ2generic(λ::Vector{T}, fλ::Vector{T}, dfλ::Vector{T}) where {T<:Real}
+    d = length(λ)
+    Δ2 = Matrix{T}(undef, d, d)
+    return ConicQKD.Δ2generic!(Δ2, λ, fλ, dfλ)
+end
+
+function Δ3generic(Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vector{T}) where {T<:Real}
+    d = length(λ)
+    Δ3 = Array{T,3}(undef, d, d, d)
+    return ConicQKD.Δ3generic!(Δ3, Δ2, λ, d2fλ)
+end
+
+function ket(::Type{T}, i::Integer, d::Integer) where {T}
+    ψ = zeros(T, d)
+    ψ[i] = 1
+    return ψ
+end
+
+"""
+    symmprod(A::Matrix, U::Matrix, k::Integer)
+
+Computes the symmetrized product symmprod(A,U,k)svec(X) = svec(A * U[:,k] * U[:,k]' * X + X * U[:,k] * U[:,k]' * A')
+"""
+function symmprod(A::Matrix{R}, U::Matrix{R}, k::Integer) where {R<:Union{Real,Complex}}
+    d = Cones.svec_length(R, size(A, 1))
+    result = zeros(real(R), d, d)
+    for i ∈ 1:d
+        M = (A * U[:, k]) * (U[:, k]' * smat(ket(real(R), i, d)))
+        result[:, i] .= svec(M + M')
+    end
+    return result
+end
+
+function d2_spectral(Γ::Array{T,3}, U, W) where {T<:Real}
+    d = size(Γ, 3)
+    return sum(d_spectral(Γ[:, :, k], Matrix(U')) * symmprod(W, U, k) for k ∈ 1:d)
+end
+
+function d_spectral(Γ, K)
+    T = eltype(Γ)
+    R = eltype(K)
+    dout, din = size(K)
+    d = Cones.svec_length(R, din)
+    skr = zeros(T, d, d)
+    temp1 = zeros(R, dout, dout)
+    temp2 = zeros(R, dout, dout)
+    temp3 = zeros(R, dout, din)
+    temp4 = zeros(R, din, din)
+    d_spectral!(skr, Γ, K, temp1, temp2, temp3, temp4, sqrt(T(2)))
+    return skr
 end

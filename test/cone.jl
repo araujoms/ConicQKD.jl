@@ -99,12 +99,12 @@ function test_oracles(
     nu = Cones.get_nu(cone)
     grad = Cones.grad(cone)
     @test dot(point, grad) ≈ -nu atol = tol rtol = tol
-    #
-    #    #    hess = Matrix(Cones.hess(cone))
+
+    hess = Matrix(Cones.hess(cone))
     #    #    inv_hess = Matrix(Cones.inv_hess(cone))
     #    #    @test hess * inv_hess ≈ I atol = tol rtol = tol
     #
-    #    #    @test hess * point ≈ -grad atol = tol rtol = tol
+    @test hess * point ≈ -grad atol = tol rtol = tol
     #    @test Cones.hess_prod!(prod_vec, point, cone) ≈ -grad atol = tol rtol = tol
     #    @test Cones.inv_hess_prod!(prod_vec, grad, cone) ≈ -point atol = tol rtol = tol
     #
@@ -168,14 +168,19 @@ function test_barrier(
     fd_grad = ForwardDiff.gradient(barrier, TFD_point)
     @test Cones.grad(cone) ≈ fd_grad atol = tol rtol = tol
 
-    #    dir = 10 * randn(T, dim)
-    #    TFD_dir = TFD.(dir)
-    #
-    #    barrier_dir(s, t) = barrier(s + t * TFD_dir)
-    #
-    #    fd_hess_dir = ForwardDiff.gradient(s -> ForwardDiff.derivative(t -> barrier_dir(s, t), 0), TFD_point)
-    #
-    #    #    @test Cones.hess(cone) * dir ≈ fd_hess_dir atol = tol rtol = tol
+    #hess = Cones.hess(cone)
+    #fd_hess = ForwardDiff.hessian(barrier, TFD_point)
+    #display(hess)
+    #display(fd_hess)
+
+    dir = 10 * randn(T, dim)
+    TFD_dir = TFD.(dir)
+
+    barrier_dir(s, t) = barrier(s + t * TFD_dir)
+
+    fd_hess_dir = ForwardDiff.gradient(s -> ForwardDiff.derivative(t -> barrier_dir(s, t), 0), TFD_point)
+
+    @test Cones.hess(cone) * dir ≈ fd_hess_dir atol = tol rtol = tol
     #    #    @test Cones.inv_hess(cone) * fd_hess_dir ≈ dir atol = tol rtol = tol
     #    prod_vec = zero(dir)
     #    @test Cones.hess_prod!(prod_vec, dir, cone) ≈ fd_hess_dir atol = tol rtol = tol
@@ -404,7 +409,7 @@ function random_protocol(cone::Type{EpiRenyiTri{T,R}}, din::Integer, dout::Integ
 end
 
 function test_barrier(cone::Type{EpiRenyiTri{T,R}}) where {T,R}
-    din, dout = 2, 3
+    din, dout = 2, 2
     α, gkraus, zkraus, rho_dim, rho_idxs, blocks, S = random_protocol(cone, din, dout)
     sα = α < 1 ? -1 : 1
     G = kraus2matrix(gkraus)

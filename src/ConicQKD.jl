@@ -20,6 +20,7 @@ import Hypatia.Cones:
     set_initial_point!,
     update_feas,
     update_grad,
+    update_hess,
     update_hess_aux,
     inv_hess_prod!,
     hess_prod!,

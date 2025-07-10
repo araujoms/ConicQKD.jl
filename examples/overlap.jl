@@ -7,22 +7,22 @@ import Hypatia.Cones
 
 function zgmap(rho::AbstractMatrix, d::Integer)
     K = zgkraus(d)
-    zgrho = sum(K[i] * rho * K[i] for i = 1:d)
+    zgrho = sum(K[i] * rho * K[i] for i ∈ 1:d)
     return zgrho
 end
 
 function zgkraus(d::Integer)
-    K = [kron(proj(i, d), I(d)) for i = 1:d]
+    K = [kron(proj(i, d), I(d)) for i ∈ 1:d]
     return K
 end
 
 function local_bases(::Type{T}, d::Integer) where {T}
     localb = Vector{Vector{Hermitian{T,Matrix{T}}}}(undef, d == 2 ? 2 : 3)
 
-    localb[1] = [ketbra(ket(i, d)) for i = 1:d]
+    localb[1] = [ketbra(ket(i, d)) for i ∈ 1:d]
 
     localb[2] = Vector{Hermitian{T,Matrix{T}}}(undef, d)
-    for i = 1:div(d, 2)
+    for i ∈ 1:div(d, 2)
         localb[2][2*i-1] = ketbra(ket(2 * i - 1, d) + ket(2 * i, d)) / 2
         localb[2][2*i] = ketbra(ket(2 * i - 1, d) - ket(2 * i, d)) / 2
     end
@@ -33,7 +33,7 @@ function local_bases(::Type{T}, d::Integer) where {T}
     if d >= 3
         localb[3] = Vector{Hermitian{T,Matrix{T}}}(undef, d)
         localb[3][1] = ketbra(ket(1, d))
-        for i = 1:div(d - 1, 2)
+        for i ∈ 1:div(d - 1, 2)
             localb[3][2*i] = ketbra(ket(2 * i, d) + ket(2 * i + 1, d)) / 2
             localb[3][2*i+1] = ketbra(ket(2 * i, d) - ket(2 * i + 1, d)) / 2
         end
@@ -49,7 +49,7 @@ function bases_equal(::Type{T}, d::Integer) where {T}
 
     b = Vector{Hermitian{T,Matrix{T}}}(undef, length(localb) * d)
     counter = 0
-    for k = 1:length(localb), i = 1:d
+    for k ∈ 1:length(localb), i ∈ 1:d
         counter += 1
         b[counter] = Hermitian(kron(localb[k][i], transpose(localb[k][i])))
     end
@@ -61,9 +61,9 @@ function bases_full(::Type{T}, d::Integer) where {T}
     num_indep = div(5 * d^2 - 2 * d - 3, 2)
     b = Vector{Hermitian{T,Matrix{T}}}(undef, num_indep)
     counter = 0
-    goodindices = [[i for i = 1:d-1], [i for i = 1:2:d-1], [i for i = 2:2:d-1]]
-    for k = 1:length(localb)
-        for i = 1:d, j = 1:d
+    goodindices = [[i for i ∈ 1:d-1], [i for i ∈ 1:2:d-1], [i for i ∈ 2:2:d-1]]
+    for k ∈ 1:length(localb)
+        for i ∈ 1:d, j ∈ 1:d
             if i in goodindices[k] || j in goodindices[k]
                 counter += 1
                 b[counter] = Hermitian(kron(localb[k][i], transpose(localb[k][j])))
@@ -92,7 +92,7 @@ function hae_overlap(v::T, d::Integer) where {T<:AbstractFloat}
 
     Ghat = [I(d^2)]
     Zhat = zgkraus(d)
-    blocks = [(i-1)*d+1:i*d for i = 1:d]
+    blocks = [(i-1)*d+1:i*d for i ∈ 1:d]
 
     @variable(model, h)
     @objective(model, Min, h / log(T(2)))
