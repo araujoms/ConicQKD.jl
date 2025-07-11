@@ -115,7 +115,8 @@ function hae_mub(
     set_attribute(model, "verbose", true)
     optimize!(model)
     if renyi
-        return log2(value(h)) / (β - 1)
+        sβ = β < 1 ? -1 : 1
+        return log2(sβ * value(h)) / (β - 1)
     else
         return value(h) / log(T(2))
     end
