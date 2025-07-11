@@ -159,7 +159,7 @@ function zkraus(Nc::Integer)
     return K
 end
 
-function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFloat}
+function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T, renyiα::T = T(11)/10; renyi::Bool = false) where {T<:AbstractFloat}
     dim_ρAB = 4 * (Nc + 1)
     model = GenericModel{T}()
     @variable(model, ρAB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
@@ -184,15 +184,22 @@ function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFlo
     ρAB_vec = svec(ρAB)
 
     @variable(model, h)
-    @objective(model, Min, h / log(T(2)))
-    @constraint(
-        model,
-        [h; ρAB_vec] in EpiRenyiTriCone{T,Complex{T}}(T(8) / 10, Ghat, Zhatperm, 1 + vec_dim; S = G, blocks)
-    )
-
+    @objective(model, Min, h)
+    if renyi
+        β = inv(2 - inv(renyiα))
+        @constraint(model, [h; ρAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S = G, blocks))
+    else
+        @constraint(model, [h; ρAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
+    end
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
     optimize!(model)
+    if renyi
+        sβ = β < 1 ? -1 : 1
+        return log2(sβ * value(h)) / (β - 1)
+    else
+        return value(h) / log(T(2))
+    end
     return objective_value(model)
     return solve_time(model)
 end

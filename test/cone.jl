@@ -21,7 +21,7 @@ import Hypatia.PolyUtils
 import Hypatia.Cones
 import Hypatia.RealOrComplex
 import ConicQKD.EpiQKDTri
-import ConicQKD.EpiRenyiTri
+import ConicQKD.EpiRenyiQKDTri
 
 import ConicQKD.kraus2matrix
 import ConicQKD.skron
@@ -373,7 +373,7 @@ function show_time_alloc(cone::Type{EpiQKDTri{T,R}}) where {T,R}
     return show_time_alloc(cone(G, Z, 1 + rho_dim; blocks))
 end
 
-function random_point!(point, cone::EpiRenyiTri{T,R}) where {T,R}
+function random_point!(point, cone::EpiRenyiQKDTri{T,R}) where {T,R}
     rho = random_state(R, cone.d)
     Grho = smat(cone.G * svec(rho))
     S = cone.S
@@ -384,13 +384,13 @@ function random_point!(point, cone::EpiRenyiTri{T,R}) where {T,R}
     point[2:end] .= svec(rho)
 end
 
-function test_oracles(cone::Type{EpiRenyiTri{T,R}}) where {T,R}
+function test_oracles(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
     din, dout = 3, 4
     α, G, Z, rho_dim, rho_idxs, blocks, S = random_protocol(cone, din, dout)
     test_oracles(cone(α, G, Z, 1 + rho_dim; S, blocks); init_tol = Inf)
 end
 
-function random_protocol(cone::Type{EpiRenyiTri{T,R}}, din::Integer, dout::Integer) where {T,R}
+function random_protocol(cone::Type{EpiRenyiQKDTri{T,R}}, din::Integer, dout::Integer) where {T,R}
     α = T(9) / 10
 
     rho_dim = Cones.svec_length(R, din^2)
@@ -408,8 +408,8 @@ function random_protocol(cone::Type{EpiRenyiTri{T,R}}, din::Integer, dout::Integ
     return α, G, Z, rho_dim, rho_idxs, blocks, kron(V, I(din))
 end
 
-function test_barrier(cone::Type{EpiRenyiTri{T,R}}) where {T,R}
-    din, dout = 2, 2
+function test_barrier(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
+    din, dout = 2, 3
     α, gkraus, zkraus, rho_dim, rho_idxs, blocks, S = random_protocol(cone, din, dout)
     sα = α < 1 ? -1 : 1
     G = kraus2matrix(gkraus)
@@ -426,7 +426,7 @@ function test_barrier(cone::Type{EpiRenyiTri{T,R}}) where {T,R}
     return test_barrier(cone(α, gkraus, zkraus, 1 + rho_dim; S, blocks), barrier; TFD = Float64)
 end
 
-function show_time_alloc(cone::Type{EpiRenyiTri{T,R}}) where {T,R}
+function show_time_alloc(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
     din, dout = 4, 5
     G, Z, rho_dim, rho_idxs, blocks = random_protocol(din, dout, R)
     return show_time_alloc(cone(G, Z, 1 + rho_dim; blocks))
