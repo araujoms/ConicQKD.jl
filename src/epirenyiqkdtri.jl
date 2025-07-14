@@ -417,7 +417,7 @@ function update_hess(cone::EpiRenyiQKDTri)
     S = cone.S
 
     g(x) = x^α
-    dg(x) = α * x^(α - 1)
+    dg(x) = α * x ^(α - 1)
     d2g(x) = α * (α - 1) * x^(α - 2)
     g̃(x) = α * x^α
     dg̃(x) = α^2 * x^(α - 1)
@@ -441,7 +441,6 @@ function update_hess(cone::EpiRenyiQKDTri)
     Zmatrix = sum(skron.(cone.Zkbig))
     rootGρ = cone.sqrtGρ
     ZSρ = cone.ShZρ
-    GZG = Hermitian(rootGρ * ZSρ * rootGρ)
     d2zdρ2 = cone.d2zdρ2
 
     #GG
@@ -465,7 +464,8 @@ function update_hess(cone::EpiRenyiQKDTri)
     else
         HZG = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(S[blocks[i], :]) for i ∈ eachindex(blocks)) * skron(cone.invsqrtShZρ) * dsf_g̃_ZGZ * vecZZ * cone.G
     end
-    d2zdρ2 .+= HZG + HZG'
+    d2zdρ2 .+= HZG
+    d2zdρ2 .+= HZG'
 
 
     #ZZ
@@ -477,16 +477,25 @@ function update_hess(cone::EpiRenyiQKDTri)
     Δ2z = Δ2generic(λz, h.(λz), dh.(λz))
     dsfh = d_spectral(Δ2z, Matrix(Uz'))
 
-    vecGSSG = skron(rootGρ * S')
-    λ_GZG, U_GZG = eigen(GZG)
+    λ_GZG = cone.ZG_fact.S .^ 2
+    U_GZG = cone.ZG_fact.V
     Δ2_dg_GZG = Δ2generic(λ_GZG, dg.(λ_GZG), d2g.(λ_GZG))
-    dsfdg_GZG = d_spectral(Δ2_dg_GZG, Matrix(U_GZG'))
-    first_term = dsfh * vecGSSG' * dsfdg_GZG * vecGSSG * dsfh
 
-    W = S * rootGρ * dg(GZG) * rootGρ * S'
+    if cone.is_S_identity
+        dsf_dg_GZG = d_spectral(Δ2_dg_GZG, Matrix(U_GZG'))
+        a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(cone.sqrtGρ[blocks[i],:]) for i ∈ eachindex(blocks))
+        first_term = a * dsf_dg_GZG * a'
+    else
+        dsf_dg_GZG2 = d_spectral(Δ2_dg_GZG, U_GZG' * cone.sqrtGρ)
+        a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(S[blocks[i],:]) for i ∈ eachindex(blocks))
+        first_term = a * dsf_dg_GZG2 * a' #FIXME reuse a
+    end
+
+    sqrtW = S * cone.sqrtGρ * U_GZG * Diagonal(cone.ZG_fact.S .^ (α - 1))
+    W = α * sqrtW * sqrtW'
     Δ3z = Δ3generic(Δ2z, λz, d2h.(λz))
     second_term = d2_spectral(Δ3z, Uz, W)
-    d2zdρ2 .+= Zmatrix' * (first_term + second_term) * Zmatrix
+    d2zdρ2 .+= first_term + Zmatrix' * (second_term) * Zmatrix
 
     @. Hρ += zi * cone.sα * d2zdρ2 #∇ρρ += sα/z ∇ρρ Ψ
     #logdet part
