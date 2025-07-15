@@ -159,7 +159,14 @@ function zkraus(Nc::Integer)
     return K
 end
 
-function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T, renyiα::T = T(11)/10; renyi::Bool = false) where {T<:AbstractFloat}
+function hbe_dmcv_general(
+    Nc::Integer,
+    L::T,
+    ξ::T,
+    α::T,
+    renyiα::T = T(11) / 10;
+    renyi::Bool = false
+) where {T<:AbstractFloat}
     dim_ρAB = 4 * (Nc + 1)
     model = GenericModel{T}()
     @variable(model, ρAB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
@@ -187,7 +194,10 @@ function hbe_dmcv_general(Nc::Integer, L::T, ξ::T, α::T, renyiα::T = T(11)/10
     @objective(model, Min, h)
     if renyi
         β = inv(2 - inv(renyiα))
-        @constraint(model, [h; ρAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S = G, blocks))
+        @constraint(
+            model,
+            [h; ρAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S = G, blocks)
+        )
     else
         @constraint(model, [h; ρAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
     end

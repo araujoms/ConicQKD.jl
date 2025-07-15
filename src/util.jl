@@ -146,13 +146,13 @@ end
 
 """
 Computes the matrix representation of the linear map
-ξ ↦ ∑ᵢⱼ Kⱼ'*(Γ .* (Kᵢ*ξ*Kᵢ')*Kⱼ
+ξ ↦ ∑ᵢⱼ Kⱼ'*(Δ2 .* (Kᵢ*ξ*Kᵢ')*Kⱼ
 acting on svec(ξ). It corresponds to the Fréchet derivative of a spectral function
-with first divided differences matrix Γ(Λ) on the point ∑ᵢKᵢ'*Λ*Kᵢ
+with first divided differences matrix Δ2(Λ) on the point ∑ᵢKᵢ'*Λ*Kᵢ
 """
 function d_spectral!(
     skr::AbstractMatrix{T},
-    Γ::Matrix{T},
+    Δ2::Matrix{T},
     K::Vector{Matrix{R}},
     temp1::Matrix{R},
     temp2::Matrix{R},
@@ -168,7 +168,7 @@ function d_spectral!(
             for k ∈ 1:length(K)
                 @views mul!(temp1, K[k][:, j], K[k][:, i]', scal, k != 1)
             end
-            @. temp2 = Γ * (temp1 + temp1')
+            @. temp2 = Δ2 * (temp1 + temp1')
             applykraus_adj!(temp4, K, Hermitian(temp2), temp3)
             col_idx += 1
             @views smat_to_svec!(skr[:, col_idx], temp4, rt2)
@@ -177,7 +177,7 @@ function d_spectral!(
         for k ∈ 1:length(K)
             @views mul!(temp1, K[k][:, j], K[k][:, j]', true, k != 1)
         end
-        @. temp2 = Γ * temp1
+        @. temp2 = Δ2 * temp1
         applykraus_adj!(temp4, K, Hermitian(temp2), temp3)
         col_idx += 1
         @views smat_to_svec!(skr[:, col_idx], temp4, rt2)
@@ -188,13 +188,13 @@ end
 
 """
 Computes the matrix representation of the linear map
-ξ ↦ K'*(Γ .* (K*ξ*K')*K
+ξ ↦ K'*(Δ2 .* (K*ξ*K')*K
 acting on svec(ξ). It corresponds to the Fréchet derivative a spectral function
-with first divided differences matrix Γ(Λ) on the point K'*Λ*K
+with first divided differences matrix Δ2(Λ) on the point K'*Λ*K
 """
 function d_spectral!(
     skr::AbstractMatrix{T},
-    Γ::Matrix{T},
+    Δ2::Matrix{T},
     K::Matrix{R},
     temp1::Matrix{R},
     temp2::Matrix{R},
@@ -210,7 +210,7 @@ function d_spectral!(
         for i ∈ 1:(j-1), scal ∈ scals
             @views K_i = K[:, i]
             mul!(temp1, K_j, K_i', scal, false)
-            @. temp2 = Γ * (temp1 + temp1')
+            @. temp2 = Δ2 * (temp1 + temp1')
             mul!(temp3, Hermitian(temp2), K)
             mul!(temp4, K', temp3)
             col_idx += 1
@@ -218,7 +218,7 @@ function d_spectral!(
         end
 
         mul!(temp1, K_j, K_j')
-        @. temp2 = Γ * temp1
+        @. temp2 = Δ2 * temp1
         mul!(temp3, Hermitian(temp2), K)
         mul!(temp4, K', temp3)
         col_idx += 1
@@ -425,13 +425,13 @@ end
 function Δ2generic(λ::Vector{T}, fλ::Vector{T}, dfλ::Vector{T}) where {T<:Real}
     d = length(λ)
     Δ2 = Matrix{T}(undef, d, d)
-    return ConicQKD.Δ2generic!(Δ2, λ, fλ, dfλ)
+    return Δ2generic!(Δ2, λ, fλ, dfλ)
 end
 
 function Δ3generic(Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vector{T}) where {T<:Real}
     d = length(λ)
     Δ3 = Array{T,3}(undef, d, d, d)
-    return ConicQKD.Δ3generic!(Δ3, Δ2, λ, d2fλ)
+    return Δ3generic!(Δ3, Δ2, λ, d2fλ)
 end
 
 function ket(::Type{T}, i::Integer, d::Integer) where {T}
@@ -440,29 +440,7 @@ function ket(::Type{T}, i::Integer, d::Integer) where {T}
     return ψ
 end
 
-"""
-    symmprod(A::Matrix, U::Matrix, k::Integer)
-
-Computes the symmetrized product symmprod(A,U,k)svec(X) = svec(A * U[:,k] * U[:,k]' * X + X * U[:,k] * U[:,k]' * A')
-"""
-function symmprod(A::Matrix{R}, U::Matrix{R}, k::Integer) where {R<:Union{Real,Complex}}
-    d = Cones.svec_length(R, size(A, 1))
-    result = zeros(real(R), d, d)
-    for i ∈ 1:d
-        M = (A * U[:, k]) * (U[:, k]' * smat(ket(real(R), i, d)))
-        result[:, i] .= svec(M + M')
-    end
-    return result
-end
-
-function d2_spectral(Γ::Array{T,3}, U, W) where {T<:Real}
-    d = size(Γ, 3)
-    return sum(d_spectral(Γ[:, :, k], Matrix(U')) * symmprod(W, U, k) for k ∈ 1:d)
-end
-
-function d_spectral(Γ, K)
-    T = eltype(Γ)
-    R = eltype(K)
+function d_spectral(Δ2::Matrix{T}, K::Matrix{R}) where {T<:Real,R<:RealOrComplex{T}}
     dout, din = size(K)
     d = Cones.svec_length(R, din)
     skr = zeros(T, d, d)
@@ -470,6 +448,68 @@ function d_spectral(Γ, K)
     temp2 = zeros(R, dout, dout)
     temp3 = zeros(R, dout, din)
     temp4 = zeros(R, din, din)
-    d_spectral!(skr, Γ, K, temp1, temp2, temp3, temp4, sqrt(T(2)))
+    d_spectral!(skr, Δ2, K, temp1, temp2, temp3, temp4, sqrt(T(2)))
+    return skr
+end
+
+function d2_spectral(Δ3::Array{T,3}, U::Matrix{R}, W::Matrix{R}) where {T<:Real,R<:RealOrComplex{T}}
+    d = size(U, 2)
+    W̃ = U' * W * U
+    Δ3W̃ = Array{R,3}(undef, d, d, d)
+    for i ∈ 1:d
+        @views Δ3W̃[:, :, i] .= Δ3[:, :, i] .* W̃
+    end
+    dim = Cones.svec_length(R, d)
+    skr = zeros(T, dim, dim)
+    temp2 = similar(U)
+    temp3 = similar(U)
+    d2_spectral!(skr, Matrix(U'), Δ3W̃, temp2, temp3, sqrt(T(2)))
+    return skr
+end
+
+"""
+Computes the matrix representation of the linear map
+ξ ↦ V' * 2 herm(∑ᵢ (Δ3[:,:,i] .* (V*W*V')) * V*ξ*V'|i⟩⟨i|) * V
+acting on svec(ξ). It corresponds to the second Fréchet derivative a spectral function
+with second divided differences matrix Δ3(Λ) on the point V'*Λ*V.
+The variable Δ3W̃ is defined as Δ3W̃[:,:,i] .= Δ3[:,:,i] .* (V*W*V')
+"""
+function d2_spectral!(
+    skr::Matrix{T},
+    V::Matrix{R},
+    Δ3W̃::Array{R,3},
+    temp1::Matrix{R},
+    temp2::Matrix{R},
+    rt2::T
+) where {T<:Real,R<:RealOrComplex{T}}
+    d = size(V, 2)
+    rt2i = inv(rt2)
+    scals = (R <: Complex{T} ? [rt2i, -rt2i * im] : [rt2i])
+
+    col_idx = 1
+    @inbounds for j ∈ 1:d
+        @views V_j = V[:, j]
+        for i ∈ 1:(j-1), scal ∈ scals
+            @views V_i = V[:, i]
+            mul!(temp2, V_j, V_i', scal, false)
+            @. temp1 = temp2 + temp2'
+            for k ∈ 1:d
+                @views mul!(temp2[:, k], Δ3W̃[:, :, k], temp1[:, k])
+            end
+            @. temp1 = temp2 + temp2'
+            spectral_outer!(temp1, V', Hermitian(temp1), temp2)
+            @views smat_to_svec!(skr[:, col_idx], temp1, rt2)
+            col_idx += 1
+        end
+
+        mul!(temp1, V_j, V_j')
+        for k ∈ 1:d
+            @views mul!(temp2[:, k], Δ3W̃[:, :, k], temp1[:, k])
+        end
+        @. temp1 = temp2 + temp2'
+        spectral_outer!(temp1, V', Hermitian(temp1), temp2)
+        @views smat_to_svec!(skr[:, col_idx], temp1, rt2)
+        col_idx += 1
+    end
     return skr
 end

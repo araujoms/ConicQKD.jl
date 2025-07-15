@@ -140,10 +140,10 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         cone.is_S_identity = ((cone.S == [I(cone.Gd)]) || cone.S == I)
         cone.are_blocks_small = maximum(cone.Zd) <= isqrt(cone.d)
         #if cone.are_blocks_small
-            cone.G = kraus2matrix(Gkraus)
-            cone.Z = [kraus2matrix([Zk[blocks[i], :] for Zk ∈ Zkraus]) for i ∈ 1:length(blocks)]
-            cone.Gadj = Matrix(cone.G')
-            cone.Zadj = Matrix.(adjoint.(cone.Z))
+        cone.G = kraus2matrix(Gkraus)
+        cone.Z = [kraus2matrix([Zk[blocks[i], :] for Zk ∈ Zkraus]) for i ∈ 1:length(blocks)]
+        cone.Gadj = Matrix(cone.G')
+        cone.Zadj = Matrix.(adjoint.(cone.Z))
         #end
         return cone
     end
@@ -418,7 +418,7 @@ function update_hess(cone::EpiRenyiQKDTri)
     S = cone.S
 
     g(x) = x^α
-    dg(x) = α * x ^(α - 1)
+    dg(x) = α * x^(α - 1)
     d2g(x) = α * (α - 1) * x^(α - 2)
     g̃(x) = α * x^α
     dg̃(x) = α^2 * x^(α - 1)
@@ -427,7 +427,6 @@ function update_hess(cone::EpiRenyiQKDTri)
     rooth(x) = x^((1 - α) / (2α))
     dh(x) = (1 / α - 1) * x^(1 / α - 2)
     d2h(x) = (1 / α - 1) * (1 / α - 2) * x^(1 / α - 3)
-
 
     H[1, 1] = abs2(zi) #∇hh = 1/z^2
     @views @. H[1, cone.ρ_idxs] = -abs2(zi) * cone.sα * cone.dzdρ #∇hρ = sα/z² * ∇ρ Ψ
@@ -460,13 +459,14 @@ function update_hess(cone::EpiRenyiQKDTri)
 
     dsf_h_Zρ = d_spectral.(cone.Δ2_h_Zρ, Zρ_Uadj)
     if cone.is_S_identity
-        HZG = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(cone.invsqrtShZρ[blocks[i],:]) for i ∈ eachindex(blocks)) * dsf_g̃_ZGZ * vecZZ * cone.G
+        temp = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(cone.invsqrtShZρ[blocks[i], :]) for i ∈ eachindex(blocks))
     else
-        HZG = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(S[blocks[i], :]) for i ∈ eachindex(blocks)) * skron(cone.invsqrtShZρ) * dsf_g̃_ZGZ * vecZZ * cone.G
+        temp =
+            sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(S[blocks[i], :]) for i ∈ eachindex(blocks)) * skron(cone.invsqrtShZρ)
     end
+    HZG = temp * dsf_g̃_ZGZ * vecZZ * cone.G
     d2zdρ2 .+= HZG
     d2zdρ2 .+= HZG'
-
 
     #ZZ
     λz = reduce(vcat, Zρ_λ)
@@ -483,26 +483,26 @@ function update_hess(cone::EpiRenyiQKDTri)
 
     if cone.is_S_identity
         dsf_dg_GZG = d_spectral(Δ2_dg_GZG, Matrix(U_GZG'))
-        a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(sqrtGρ[blocks[i],:]) for i ∈ eachindex(blocks))
+        a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(sqrtGρ[blocks[i], :]) for i ∈ eachindex(blocks))
         first_term = a * dsf_dg_GZG * a'
     else
         dsf_dg_GZG2 = d_spectral(Δ2_dg_GZG, U_GZG' * sqrtGρ)
-        a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(S[blocks[i],:]) for i ∈ eachindex(blocks))
+        a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(S[blocks[i], :]) for i ∈ eachindex(blocks))
         first_term = a * dsf_dg_GZG2 * a' #FIXME reuse a
     end
 
     if cone.is_S_identity
         temp = U_GZG * Diagonal(cone.ZG_fact.S .^ (α - 1))
-        tempvec = [sqrtGρ[b,:]*temp for b in blocks]
-        Wvec = [α * t*t' for t in tempvec]
+        tempvec = [sqrtGρ[b, :] * temp for b ∈ blocks]
+        Wvec = [α * t * t' for t ∈ tempvec]
     else
         temp = sqrtGρ * U_GZG * Diagonal(cone.ZG_fact.S .^ (α - 1))
-        tempvec = [S[b,:] * temp for b in blocks]
-        Wvec = [α * t*t' for t in tempvec]
+        tempvec = [S[b, :] * temp for b ∈ blocks]
+        Wvec = [α * t * t' for t ∈ tempvec]
     end
     Δ3zvec = Δ3generic.(cone.Δ2_h_Zρ, Zρ_λ, [d2h.(v) for v ∈ Zρ_λ])
     second_term_vec = d2_spectral.(Δ3zvec, Zρ_U, Wvec)
-    second_term = sum(cone.Zadj[i] * second_term_vec[i] * cone.Z[i] for i in eachindex(blocks))
+    second_term = sum(cone.Zadj[i] * second_term_vec[i] * cone.Z[i] for i ∈ eachindex(blocks))
     d2zdρ2 .+= first_term
     d2zdρ2 .+= second_term
 
