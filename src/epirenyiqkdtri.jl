@@ -483,10 +483,10 @@ function update_hess(cone::EpiRenyiQKDTri)
 
     if cone.is_S_identity
         dsf_dg_GZG = d_spectral(Δ2_dg_GZG, Matrix(U_GZG'))
-        a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(cone.sqrtGρ[blocks[i],:]) for i ∈ eachindex(blocks))
+        a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(sqrtGρ[blocks[i],:]) for i ∈ eachindex(blocks))
         first_term = a * dsf_dg_GZG * a'
     else
-        dsf_dg_GZG2 = d_spectral(Δ2_dg_GZG, U_GZG' * cone.sqrtGρ)
+        dsf_dg_GZG2 = d_spectral(Δ2_dg_GZG, U_GZG' * sqrtGρ)
         a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(S[blocks[i],:]) for i ∈ eachindex(blocks))
         first_term = a * dsf_dg_GZG2 * a' #FIXME reuse a
     end
@@ -496,16 +496,15 @@ function update_hess(cone::EpiRenyiQKDTri)
         tempvec = [sqrtGρ[b,:]*temp for b in blocks]
         Wvec = [α * t*t' for t in tempvec]
     else
-        temp = cone.sqrtGρ * U_GZG * Diagonal(cone.ZG_fact.S .^ (α - 1))
+        temp = sqrtGρ * U_GZG * Diagonal(cone.ZG_fact.S .^ (α - 1))
         tempvec = [S[b,:] * temp for b in blocks]
         Wvec = [α * t*t' for t in tempvec]
     end
-    sqrtW = S * cone.sqrtGρ * U_GZG * Diagonal(cone.ZG_fact.S .^ (α - 1))
-    W = α * sqrtW * sqrtW'
     Δ3zvec = Δ3generic.(cone.Δ2_h_Zρ, Zρ_λ, [d2h.(v) for v ∈ Zρ_λ])
     second_term_vec = d2_spectral.(Δ3zvec, Zρ_U, Wvec)
     second_term = sum(cone.Zadj[i] * second_term_vec[i] * cone.Z[i] for i in eachindex(blocks))
-    @time @. d2zdρ2 += first_term + second_term
+    d2zdρ2 .+= first_term
+    d2zdρ2 .+= second_term
 
     @. Hρ += zi * cone.sα * d2zdρ2 #∇ρρ += sα/z ∇ρρ Ψ
     #logdet part
