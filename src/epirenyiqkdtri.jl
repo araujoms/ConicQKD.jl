@@ -413,6 +413,7 @@ function update_hess(cone::EpiRenyiQKDTri)
     zi = inv(cone.z)
     α = cone.α
     Gρ = cone.Gρ
+    sqrtGρ = cone.sqrtGρ
     blocks = cone.blocks
     S = cone.S
 
@@ -429,9 +430,9 @@ function update_hess(cone::EpiRenyiQKDTri)
 
 
     H[1, 1] = abs2(zi) #∇hh = 1/z^2
-    @views @. H[1, cone.ρ_idxs] = -abs2(zi) * cone.sα * cone.dzdρ #∇hρ = sα/z^2 * ∇ρ Ψ
+    @views @. H[1, cone.ρ_idxs] = -abs2(zi) * cone.sα * cone.dzdρ #∇hρ = sα/z² * ∇ρ Ψ
     @views Hρ = H[cone.ρ_idxs, cone.ρ_idxs]
-    @views mul!(Hρ, cone.dzdρ, cone.dzdρ', abs2(zi), false) #∇ρρ = 1/z^2 * (∇ρ Ψ) * (∇ρ Ψ)'
+    @views mul!(Hρ, cone.dzdρ, cone.dzdρ', abs2(zi), false) #∇ρρ = 1/z² * (∇ρ Ψ) * (∇ρ Ψ)'
 
     #Zρ = sum(K * cone.ρ * K' for K ∈ cone.Zkbig)
     Zρ = zeros(eltype(Gρ), cone.ZD, cone.ZD)
@@ -439,11 +440,10 @@ function update_hess(cone::EpiRenyiQKDTri)
         @views Zρ[cone.blocks[i], cone.blocks[i]] .= Zρ[i]
     end
     Zmatrix = sum(skron.(cone.Zkbig))
-    rootGρ = cone.sqrtGρ
     ZSρ = cone.ShZρ
     d2zdρ2 = cone.d2zdρ2
 
-    #GG
+    #GG G' ∘ (Z_S^½ ⋅Z_S^½) ∘ Ddg(Z_S^½ Gρ Z_S^½)[⋅] ∘ (Z_S^½ ⋅Z_S^½) ∘ G
     λ_ZGZ = cone.ZG_fact.S .^ 2
     U_ZGZ = cone.ZG_fact.U
     Δ2_dg_ZGZ = Δ2generic(λ_ZGZ, dg.(λ_ZGZ), d2g.(λ_ZGZ))
@@ -491,11 +491,21 @@ function update_hess(cone::EpiRenyiQKDTri)
         first_term = a * dsf_dg_GZG2 * a' #FIXME reuse a
     end
 
+    if cone.is_S_identity
+        temp = U_GZG * Diagonal(cone.ZG_fact.S .^ (α - 1))
+        tempvec = [sqrtGρ[b,:]*temp for b in blocks]
+        Wvec = [α * t*t' for t in tempvec]
+    else
+        temp = cone.sqrtGρ * U_GZG * Diagonal(cone.ZG_fact.S .^ (α - 1))
+        tempvec = [S[b,:] * temp for b in blocks]
+        Wvec = [α * t*t' for t in tempvec]
+    end
     sqrtW = S * cone.sqrtGρ * U_GZG * Diagonal(cone.ZG_fact.S .^ (α - 1))
     W = α * sqrtW * sqrtW'
-    Δ3z = Δ3generic(Δ2z, λz, d2h.(λz))
-    second_term = d2_spectral(Δ3z, Uz, W)
-    d2zdρ2 .+= first_term + Zmatrix' * (second_term) * Zmatrix
+    Δ3zvec = Δ3generic.(cone.Δ2_h_Zρ, Zρ_λ, [d2h.(v) for v ∈ Zρ_λ])
+    second_term_vec = d2_spectral.(Δ3zvec, Zρ_U, Wvec)
+    second_term = sum(cone.Zadj[i] * second_term_vec[i] * cone.Z[i] for i in eachindex(blocks))
+    @time @. d2zdρ2 += first_term + second_term
 
     @. Hρ += zi * cone.sα * d2zdρ2 #∇ρρ += sα/z ∇ρρ Ψ
     #logdet part
