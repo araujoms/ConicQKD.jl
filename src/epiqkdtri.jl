@@ -381,13 +381,9 @@ end
 function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDTri)
     cone.hess_aux_updated || update_hess_aux(cone)
 
-    rt2 = cone.rt2
     ρ_idxs = cone.ρ_idxs
     dzdρ = cone.dzdρ
-    d2zdρ2vec = cone.d2zdρ2vec
     ρ_arr_mat = cone.mat
-    (ρ_λ, ρ_U) = cone.ρ_fact
-
     zi = inv(cone.z)
 
     # For each vector ξ do:
@@ -400,14 +396,14 @@ function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDT
         # Hhρ * a_h + Hρρ * a_ρ
         @. ρ_prod = prod[1, i] * dzdρ
 
-        svec_to_smat!(ρ_arr_mat, ρ_arr, rt2)
-        d2zdρ2!(d2zdρ2vec, ρ_arr_mat, cone)
+        svec_to_smat!(ρ_arr_mat, ρ_arr, cone.rt2)
+        d2zdρ2!(cone.d2zdρ2vec, ρ_arr_mat, cone)
 
-        @. ρ_prod -= zi * d2zdρ2vec
+        @. ρ_prod -= zi * cone.d2zdρ2vec
 
         # Hessian of log(det(ρ))
         spectral_outer!(cone.mat3, cone.ρ_inv, Hermitian(ρ_arr_mat), cone.mat2)  # ρ^-1 ξ ρ^-1
-        ρ_prod .+= smat_to_svec!(cone.vec, cone.mat3, rt2)
+        ρ_prod .+= smat_to_svec!(cone.vec, cone.mat3, cone.rt2)
     end
 
     return prod
