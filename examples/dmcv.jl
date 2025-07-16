@@ -183,6 +183,7 @@ function hbe_dmcv_general(
     Zhat = [Zi * G for Zi ∈ Z]
     permutation = vec(reshape(1:16*(Nc+1), 4, 4 * (Nc + 1))')
     Zhatperm = [Zi[permutation, :] for Zi ∈ Zhat]
+    S = G[permutation, :]
 
     block_size = 4 * (Nc + 1)
     blocks = [(i-1)*block_size+1:i*block_size for i ∈ 1:4]
@@ -194,10 +195,7 @@ function hbe_dmcv_general(
     @objective(model, Min, h)
     if renyi
         β = inv(2 - inv(renyiα))
-        @constraint(
-            model,
-            [h; ρAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S = G, blocks)
-        )
+        @constraint(model, [h; ρAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks))
     else
         @constraint(model, [h; ρAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
     end
