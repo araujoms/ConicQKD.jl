@@ -49,7 +49,7 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     sqrtShZρ::Matrix{R}
     invsqrtShZρ::Matrix{R}
     G::Matrix{T}
-    S::Union{Matrix{R},UniformScaling{Bool}} #FIXME abstract type
+    S::Matrix{R}
     Z::Vector{Matrix{T}}
     Gk::Vector{Matrix{R}}
     Zk::Vector{Vector{Matrix{R}}}
@@ -129,7 +129,6 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         cone.ZD = sum(cone.Zd)
         cone.Gρ_dim = Cones.svec_length(R, cone.Gd)
         cone.Zρ_dim = Cones.svec_length.(Ref(R), cone.Zd)
-        cone.S = S
 
         Gkraus = [R.(Gk) for Gk ∈ Gkraus]
         Zkraus = [R.(Zk) for Zk ∈ Zkraus]
@@ -137,7 +136,12 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         cone.Zkbig = Zkraus
         cone.Zk = [filter!(!iszero, [Zk[blocks[i], :] for Zk ∈ Zkraus]) for i ∈ 1:cone.nblocks]
         cone.is_G_identity = (cone.Gk == [I(cone.d)])
-        cone.is_S_identity = ((cone.S == [I(cone.Gd)]) || cone.S == I)
+        cone.is_S_identity = (S == I)
+        if cone.is_S_identity
+            cone.S = fill(R(1), 1, 1) #the goal is to error if S is used
+        else
+            cone.S = convert(Matrix{R}, S)
+        end
         cone.are_blocks_small = maximum(cone.Zd) <= isqrt(cone.d)
         #if cone.are_blocks_small
         cone.G = kraus2matrix(Gkraus)
@@ -449,7 +453,7 @@ function update_hess(cone::EpiRenyiQKDTri)
     dsf_dg_ZGZ = d_spectral(Δ2_dg_ZGZ, U_ZGZ' * cone.sqrtShZρ')
     d2zdρ2 .= cone.Gadj * dsf_dg_ZGZ * cone.G
 
-    #ZG
+    #ZG Z' ∘ Dh(Zρ)[S Z_S^-½ ⋅Z_S^-½ S'] ∘ Dg̃(Z_S^½ Gρ Z_S^½)[Z_S^½ ⋅ Z_S^½) ∘ G
     Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
     Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
     Zρ_Uadj = [Matrix(fact.vectors') for fact ∈ cone.Zρ_fact]
@@ -468,7 +472,8 @@ function update_hess(cone::EpiRenyiQKDTri)
     d2zdρ2 .+= HZG
     d2zdρ2 .+= HZG'
 
-    #ZZ
+    #ZZ Z' ∘ Dh(Zρ)[S Gρ^½ ⋅ Gρ^½ S'] ∘ Ddg(Gρ^½ Z_S Gρ^½)[Gρ^½ S' ⋅S Gρ^½] ∘ Dh(Zρ)[⋅] ∘ Z
+    ##    + Z' ∘ D²h(Zρ)[ ⋅, S Gρ^½ dg(Gρ^½ Z_S Gρ^½) Gρ^½ S'] ∘ Z
     λz = reduce(vcat, Zρ_λ)
     Uz = zeros(eltype(Gρ), cone.ZD, cone.ZD)
     for i ∈ eachindex(cone.blocks)

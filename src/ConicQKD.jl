@@ -46,7 +46,7 @@ include("epirenyiqkdtri.jl")
 """
     EpiQKDTriCone{T,R}(Gkraus::VecOrMat, Zkraus::Vector, dim::Int; blocks::Vector, use_dual::Bool)
 
-QKD cone with number of real parameters `dim`. The cone is parametrized by the CP maps G and Z, given as vectors of Kraus operators `Gkraus` and `Zkraus`. `blocks` is an optional argument describing the block structure of Z as a vector of vectors. `use_dual` is an optional argument to optimize over the dual cone instead.
+QKD cone with number of real parameters `dim`. The cone is parametrized by the CP maps G and Z, given as vectors of Kraus operators `Gkraus` and `Zkraus`. `blocks` is an optional argument describing the block structure of Z as a vector of ranges. `use_dual` is an optional argument to optimize over the dual cone instead.
 """
 struct EpiQKDTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
     Gkraus::Vector{<:AbstractMatrix}
@@ -74,9 +74,9 @@ function Hypatia.cone_from_moi(::Type{T}, cone::EpiQKDTriCone{T,R}) where {T<:Re
 end
 
 """
-    EpiRenyiQKDTriCone{T,R}(Gkraus::VecOrMat, Zkraus::Vector, dim::Int; blocks::Vector, use_dual::Bool)
+    EpiRenyiQKDTriCone{T,R}(Gkraus::VecOrMat, Zkraus::Vector, dim::Int; S::Union{AbstractMatrix,UniformScaling}, blocks::Vector, use_dual::Bool)
 
-Renyi cone with number of real parameters `dim`. The cone is parametrized by the CP maps G and Z, given as vectors of Kraus operators `Gkraus` and `Zkraus`. `blocks` is an optional argument describing the block structure of Z as a vector of vectors. `use_dual` is an optional argument to optimize over the dual cone instead.
+Rényi QKD cone with number of real parameters `dim`. The cone is parametrized by the CP maps G and Z, given as vectors of Kraus operators `Gkraus` and `Zkraus`. `S` is the isometry connecting `G` to `Z`, defaults to identity. `blocks` is an optional argument describing the block structure of Z as a vector of ranges. `use_dual` is an optional argument to optimize over the dual cone instead.
 """
 struct EpiRenyiQKDTriCone{T<:Real,R<:RealOrComplex{T}} <: MOI.AbstractVectorSet
     α::T
