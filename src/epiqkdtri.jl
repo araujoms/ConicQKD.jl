@@ -378,11 +378,7 @@ function d2zdρ2!(
 end
 
 """Multiply the Hessian times the vector ξ. This is more efficient than calculating the Hessian."""
-function hess_prod!(
-    prod::AbstractVecOrMat,
-    arr::AbstractVecOrMat,
-    cone::EpiQKDTri{T,R}
-) where {T<:Real,R<:RealOrComplex{T}}
+function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDTri)
     cone.hess_aux_updated || update_hess_aux(cone)
 
     rt2 = cone.rt2
@@ -410,10 +406,7 @@ function hess_prod!(
         @. ρ_prod -= zi * d2zdρ2vec
 
         # Hessian of log(det(ρ))
-        spectral_outer!(cone.mat3, ρ_U', Hermitian(ρ_arr_mat), cone.mat2)  # U' ξ U
-        ldiv!(Diagonal(ρ_λ), cone.mat3)  # Λ^-1 U' ξ U
-        rdiv!(cone.mat3, Diagonal(ρ_λ))  # Λ^-1 U' ξ U Λ^-1
-        spectral_outer!(cone.mat3, ρ_U, Hermitian(cone.mat3), cone.mat2)  # U Λ^-1 U' ξ U Λ^-1 U'
+        spectral_outer!(cone.mat3, cone.ρ_inv, Hermitian(ρ_arr_mat), cone.mat2)  # ρ^-1 ξ ρ^-1
         ρ_prod .+= smat_to_svec!(cone.vec, cone.mat3, rt2)
     end
 
