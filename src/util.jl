@@ -454,7 +454,7 @@ end
 
 function d2_spectral(Δ3::Array{T,3}, U::Matrix{R}, W::Matrix{R}) where {T<:Real,R<:RealOrComplex{T}}
     d = size(U, 2)
-    W̃ = U' * W * U
+    W̃ = U * W * U'
     Δ3W̃ = Array{R,3}(undef, d, d, d)
     for i ∈ 1:d
         @views Δ3W̃[:, :, i] .= Δ3[:, :, i] .* W̃
@@ -463,7 +463,7 @@ function d2_spectral(Δ3::Array{T,3}, U::Matrix{R}, W::Matrix{R}) where {T<:Real
     skr = zeros(T, dim, dim)
     temp2 = similar(U)
     temp3 = similar(U)
-    d2_spectral!(skr, Matrix(U'), Δ3W̃, temp2, temp3, sqrt(T(2)))
+    d2_spectral!(skr, U, Δ3W̃, temp2, temp3, sqrt(T(2)))
     return skr
 end
 

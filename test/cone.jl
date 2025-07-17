@@ -75,15 +75,15 @@ function test_oracles(
     end
     init_only && return
 
-    #    # test at initial point
-    #    prod_vec = zero(point)
-    #    #    hess = Cones.hess(cone)
-    #    #    @test hess * point ≈ dual_point atol = tol rtol = tol
-    #    @test Cones.hess_prod!(prod_vec, point, cone) ≈ dual_point atol = tol rtol = tol
-    #    #    inv_hess = Cones.inv_hess(cone)
-    #    #    @test inv_hess * dual_point ≈ point atol = tol rtol = tol
-    #    @test Cones.inv_hess_prod!(prod_vec, dual_point, cone) ≈ point atol = tol rtol = tol
-    #    #    @test hess * inv_hess ≈ I atol = tol rtol = tol
+    # test at initial point
+    # prod_vec = zero(point)
+    # hess = Cones.hess(cone)
+    # @test hess * point ≈ dual_point atol = tol rtol = tol
+    # @test Cones.hess_prod!(prod_vec, point, cone) ≈ dual_point atol = tol rtol = tol
+    # inv_hess = Cones.inv_hess(cone)
+    # @test inv_hess * dual_point ≈ point atol = tol rtol = tol
+    # @test Cones.inv_hess_prod!(prod_vec, dual_point, cone) ≈ point atol = tol rtol = tol
+    # @test hess * inv_hess ≈ I atol = tol rtol = tol
     #
     # generate random valid point
     random_point!(point, cone)
@@ -101,20 +101,21 @@ function test_oracles(
     @test dot(point, grad) ≈ -nu atol = tol rtol = tol
 
     hess = Matrix(Cones.hess(cone))
-    #    #    inv_hess = Matrix(Cones.inv_hess(cone))
-    #    #    @test hess * inv_hess ≈ I atol = tol rtol = tol
+    #inv_hess = Matrix(Cones.inv_hess(cone))
+    #@test hess * inv_hess ≈ I atol = tol rtol = tol
     #
     @test hess * point ≈ -grad atol = tol rtol = tol
-    #    @test Cones.hess_prod!(prod_vec, point, cone) ≈ -grad atol = tol rtol = tol
-    #    @test Cones.inv_hess_prod!(prod_vec, grad, cone) ≈ -point atol = tol rtol = tol
+    prod_vec = zero(point)
+    @test Cones.hess_prod!(prod_vec, point, cone) ≈ -grad atol = tol rtol = tol
+    #@test Cones.inv_hess_prod!(prod_vec, grad, cone) ≈ -point atol = tol rtol = tol
     #
-    #    #    prod_mat = zeros(T, dim, dim)
-    #    #    @test Cones.hess_prod!(prod_mat, inv_hess, cone) ≈ I atol = tol rtol = tol
-    #    #    @test Cones.inv_hess_prod!(prod_mat, hess, cone) ≈ I atol = tol rtol = tol
+    #prod_mat = zeros(T, dim, dim)
+    #@test Cones.hess_prod!(prod_mat, inv_hess, cone) ≈ I atol = tol rtol = tol
+    #@test Cones.inv_hess_prod!(prod_mat, hess, cone) ≈ I atol = tol rtol = tol
     #
-    #    psi = dual_point + grad
-    #    proxsqr = dot(psi, Cones.inv_hess_prod!(prod_vec, psi, cone))
-    #    @test Cones.get_proxsqr(cone, one(T), false) ≈ proxsqr atol = tol rtol = tol
+    #psi = dual_point + grad
+    #proxsqr = dot(psi, Cones.inv_hess_prod!(prod_vec, psi, cone))
+    #@test Cones.get_proxsqr(cone, one(T), false) ≈ proxsqr atol = tol rtol = tol
     #
     #    if hasproperty(cone, :use_hess_prod_slow)
     #        Cones.update_use_hess_prod_slow(cone)
@@ -182,8 +183,8 @@ function test_barrier(
 
     @test Cones.hess(cone) * dir ≈ fd_hess_dir atol = tol rtol = tol
     #    #    @test Cones.inv_hess(cone) * fd_hess_dir ≈ dir atol = tol rtol = tol
-    #    prod_vec = zero(dir)
-    #    @test Cones.hess_prod!(prod_vec, dir, cone) ≈ fd_hess_dir atol = tol rtol = tol
+    prod_vec = zero(dir)
+    @test Cones.hess_prod!(prod_vec, dir, cone) ≈ fd_hess_dir atol = tol rtol = tol
     #    @test Cones.inv_hess_prod!(prod_vec, fd_hess_dir, cone) ≈ dir atol = tol rtol = tol
     #
     #    if Cones.use_dder3(cone)
