@@ -239,6 +239,14 @@ get_nu(cone::EpiRenyiQKDTri) = cone.d + 1
 function set_initial_point!(arr::AbstractVector{T}, cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     d = cone.d
     blocks = cone.blocks
+    ShZρ = cone.ShZρ
+    sqrtShZρ = cone.sqrtShZρ
+    invsqrtShZρ = cone.invsqrtShZρ
+    hZρ = cone.hZρ
+    hZρ_λ = cone.hZρ_λ
+    Gmat = cone.Gmat
+    Zmat = cone.Zmat
+
     h(x) = x^((1 - cone.α) / cone.α)
 
     γ = sqrt(T(d + 3) / (2d + 2) - 0.5 * cone.sα * sqrt(1 + T(4) / (d + 1)^2))
@@ -261,28 +269,31 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiRenyiQKDTri{T,R}) w
     cone.Gρ_fact = eigen(Hermitian(cone.Gρ))
     cone.Zρ_fact = eigen.(Hermitian.(cone.Zρ))
     Gρ_λ, Gρ_U = cone.Gρ_fact
-    cone.sqrtGρ = Gρ_U * Diagonal(sqrt.(Gρ_λ)) * Gρ_U'
-
+    mul!(Gmat, Gρ_U, Diagonal(fourthroot.(Gρ_λ)))
+    mul!(cone.sqrtGρ, Gmat, Gmat')
     Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
     Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
     for i ∈ eachindex(Zρ_λ)
-        cone.hZρ_λ[i] .= h.(Zρ_λ[i])
+        hZρ_λ[i] .= h.(Zρ_λ[i])
     end
-    spectral_outer!.(cone.hZρ, Zρ_U, cone.hZρ_λ, cone.Zmat)
+    spectral_outer!.(hZρ, Zρ_U, hZρ_λ, Zmat)
     if cone.is_S_identity
         for i ∈ eachindex(blocks)
-            @views cone.ShZρ[blocks[i], blocks[i]] .= cone.hZρ[i]
-            @views spectral_outer!(cone.sqrtShZρ[blocks[i], blocks[i]], Zρ_U[i], sqrt.(cone.hZρ_λ[i]), cone.Zmat[i])
+            @views ShZρ[blocks[i], blocks[i]] .= hZρ[i]
+            mul!(Zmat[i], Zρ_U[i], Diagonal(fourthroot.(hZρ_λ[i])))
+            @views mul!(sqrtShZρ[blocks[i], blocks[i]], Zmat[i], Zmat[i]')
         end
     else
+        fill!(ShZρ, 0)
         for i ∈ eachindex(blocks)
-            @views mul!(cone.ZS[blocks[i], :], cone.hZρ[i], cone.S[blocks[i], :])
+            @views spectral_outer!(Gmat, cone.S[blocks[i], :]', Hermitian(hZρ[i]), cone.ZGmat_vec[i])
+            ShZρ .+= Gmat
         end
-        mul!(cone.ShZρ, cone.S', cone.ZS)
-        cone.sqrtShZρ .= sqrt(Hermitian(cone.ShZρ))
+        ShZρ_λ, ShZρ_U = eigen(Hermitian(ShZρ))
+        mul!(Gmat, ShZρ_U, Diagonal(fourthroot.(ShZρ_λ)))
+        mul!(sqrtShZρ, Gmat, Gmat')
     end
     mul!(cone.ZG, cone.sqrtShZρ, cone.sqrtGρ)
-    cone.ZG_fact = svd(cone.ZG)
     renyi = mapreduce(x -> x^(2 * cone.α), +, svdvals(cone.ZG))
 
     arr[1] = 0.5 * (cone.sα * renyi + sqrt(4 + renyi^2))
@@ -293,6 +304,14 @@ function update_feas(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{
     @assert !cone.feas_updated
     @views ρ_vec = cone.point[cone.ρ_idxs]
     blocks = cone.blocks
+    ShZρ = cone.ShZρ
+    sqrtShZρ = cone.sqrtShZρ
+    invsqrtShZρ = cone.invsqrtShZρ
+    hZρ = cone.hZρ
+    hZρ_λ = cone.hZρ_λ
+    Gmat = cone.Gmat
+    Zmat = cone.Zmat
+
     h(x) = x^((1 - cone.α) / cone.α)
 
     cone.is_feas = false
@@ -311,36 +330,33 @@ function update_feas(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{
         cone.Zρ_fact = eigen.(Hermitian.(cone.Zρ))
         if isposdef(cone.ρ_fact) && isposdef(cone.Gρ_fact) && all(isposdef.(cone.Zρ_fact)) #necessary because of numerical error
             Gρ_λ, Gρ_U = cone.Gρ_fact
-            cone.sqrtGρ = Gρ_U * Diagonal(sqrt.(Gρ_λ)) * Gρ_U'
+            mul!(Gmat, Gρ_U, Diagonal(fourthroot.(Gρ_λ)))
+            mul!(cone.sqrtGρ, Gmat, Gmat')
             Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
             Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
             for i ∈ eachindex(Zρ_λ)
-                cone.hZρ_λ[i] .= h.(Zρ_λ[i])
+                hZρ_λ[i] .= h.(Zρ_λ[i])
             end
-            spectral_outer!.(cone.hZρ, Zρ_U, cone.hZρ_λ, cone.Zmat)
+            spectral_outer!.(hZρ, Zρ_U, hZρ_λ, Zmat)
             if cone.is_S_identity
                 for i ∈ eachindex(blocks)
-                    @views cone.ShZρ[blocks[i], blocks[i]] .= cone.hZρ[i]
-                    @views spectral_outer!(
-                        cone.sqrtShZρ[blocks[i], blocks[i]],
-                        Zρ_U[i],
-                        sqrt.(cone.hZρ_λ[i]),
-                        cone.Zmat[i]
-                    )
-                    @views spectral_outer!(
-                        cone.invsqrtShZρ[blocks[i], blocks[i]],
-                        Zρ_U[i],
-                        inv.(sqrt.(cone.hZρ_λ[i])),
-                        cone.Zmat[i]
-                    )
+                    @views ShZρ[blocks[i], blocks[i]] .= hZρ[i]
+                    mul!(Zmat[i], Zρ_U[i], Diagonal(fourthroot.(hZρ_λ[i])))
+                    @views mul!(sqrtShZρ[blocks[i], blocks[i]], Zmat[i], Zmat[i]')
+                    mul!(Zmat[i], Zρ_U[i], Diagonal(map(inv ∘ fourthroot, hZρ_λ[i])))
+                    @views mul!(invsqrtShZρ[blocks[i], blocks[i]], Zmat[i], Zmat[i]')
                 end
             else
+                fill!(ShZρ, 0)
                 for i ∈ eachindex(blocks)
-                    @views mul!(cone.ZS[blocks[i], :], cone.hZρ[i], cone.S[blocks[i], :])
+                    @views spectral_outer!(Gmat, cone.S[blocks[i], :]', Hermitian(hZρ[i]), cone.ZGmat_vec[i])
+                    ShZρ .+= Gmat
                 end
-                mul!(cone.ShZρ, cone.S', cone.ZS)
-                cone.sqrtShZρ .= sqrt(Hermitian(cone.ShZρ))
-                cone.invsqrtShZρ .= inv(Hermitian(cone.sqrtShZρ))
+                ShZρ_λ, ShZρ_U = eigen(Hermitian(ShZρ))
+                mul!(Gmat, ShZρ_U, Diagonal(fourthroot.(ShZρ_λ)))
+                mul!(sqrtShZρ, Gmat, Gmat')
+                mul!(Gmat, ShZρ_U, Diagonal(map(inv ∘ fourthroot, ShZρ_λ)))
+                mul!(invsqrtShZρ, Gmat, Gmat')
             end
             mul!(cone.ZG, cone.sqrtShZρ, cone.sqrtGρ)
             cone.ZG_fact = svd(cone.ZG)

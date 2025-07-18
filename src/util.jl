@@ -513,3 +513,25 @@ function d2_spectral!(
     end
     return skr
 end
+
+function spectral_outer!(
+    mat::AbstractMatrix{R},
+    vecs::Union{Matrix{R},SubArray{R}},
+    symm::Hermitian{R},
+    temp::Matrix{R}
+) where {R<:RealOrComplex}
+    mul!(temp, vecs, symm)
+    mul!(mat, temp, vecs')
+    return mat
+end
+
+function spectral_outer!(
+    mat::AbstractMatrix{R},
+    vecs::Adjoint{R,<:Union{Matrix{R},SubArray{R}}},
+    symm::Hermitian{R},
+    temp::Matrix{R}
+) where {R<:RealOrComplex}
+    mul!(temp, symm, vecs')
+    mul!(mat, vecs, temp)
+    return mat
+end
