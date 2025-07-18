@@ -739,3 +739,66 @@ function update_hess(cone::EpiRenyiQKDTri)
     cone.hess_updated = true
     return cone.hess
 end
+
+
+function d3Ψdρ3!(
+    d3Ψdρ3vec::AbstractVector{T},
+    ρ_dir_mat::AbstractMatrix{R},
+    cone::EpiRenyiQKDTri{T,R}
+) where {T<:Real,R<:RealOrComplex{T}}
+
+    # TODO
+
+    return d3Ψdρ3vec
+end
+
+
+function update_dder3_aux(cone::EpiRenyiQKDTri)
+    @assert !cone.dder3_aux_updated
+    cone.hess_aux_updated || update_hess_aux(cone)
+
+    # TODO
+
+    cone.dder3_aux_updated = true
+    return
+end
+
+
+function dder3(cone::EpiRenyiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:RealOrComplex{T}}
+
+    cone.dder3_aux_updated || update_dder3_aux(cone)
+
+    dder3 = cone.dder3
+    rt2 = cone.rt2
+    zi = inv(cone.z)
+
+    @views ρ_dir = dir[cone.ρ_idxs]
+
+    const0 = zi * (dir[1] - cone.sα * dot(ρ_dir, cone.dΨdρ))  #  zi * ξ[1] - sα * zi * ∇ρΨ⋅ξ[ρ]
+    const1 = zi * (abs2(const0) + zi * cone.sα * 0.5 * dot(ρ_dir, cone.d2Ψdρ2vec))  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
+
+    # h component of dder3
+    dder3[1] = const1
+
+    # ρ component of dder3
+    @views dder3_ρ = dder3[cone.ρ_idxs]
+
+    @views ρ_arr = dir[ρ_idxs]
+    svec_to_smat!(ρ_arr_mat, ρ_arr, cone.rt2)
+    spectral_outer!(cone.mat3, cone.ρ_inv, Hermitian(ρ_arr_mat), cone.mat2)  # ρ^-1 ξ ρ^-1
+    mul!(cone.mat2, cone.mat3, ρ_arr_mat)  # ρ^-1 ξ ρ^-1 ξ
+    mul!(cone.mat3, cone.mat2, cone.ρ_inv)  # ρ^-1 ξ ρ^-1 ξ ρ^-1
+
+    smat_to_svec!(dder3_ρ, cone.mat3, rt2)
+
+    @. dder3_ρ += cone.sα * zi * const0 * cone.d2Ψdρ2vec
+    @. dder3_ρ -= cone.sα * const1 * cone.dΨdρ
+    d3Ψdρ3vec = cone.d2Ψdρ2vec  #reusing variable to save memory
+
+    ρ_dir_mat = cone.mat
+    svec_to_smat!(ρ_dir_mat, ρ_dir, rt2)
+    d3Ψdρ3!(d3Ψdρ3vec, ρ_dir_mat, cone)
+    @. dder3_ρ -= cone.sα * zi * 0.5 * d3Ψdρ3vec
+
+    return dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
+end
