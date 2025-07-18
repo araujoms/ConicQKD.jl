@@ -12,8 +12,6 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     point::Vector{T}
     dual_point::Vector{T}
     grad::Vector{T}
-    Hρ::Matrix{T}
-    Hρ_fact::Cholesky{T,Matrix{T}}
     dder3::Vector{T}
     vec1::Vector{T}
     vec2::Vector{T}
@@ -21,7 +19,6 @@ mutable struct EpiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     grad_updated::Bool
     hess_updated::Bool
     hess_aux_updated::Bool
-    inv_hess_aux_updated::Bool
     inv_hess_updated::Bool
     hess_fact_updated::Bool
     dder3_aux_updated::Bool
@@ -131,11 +128,9 @@ function reset_data(cone::EpiQKDTri)
                 cone.hess_updated =
                     cone.hess_aux_updated =
                         cone.inv_hess_updated =
-                            cone.hess_fact_updated = cone.dder3_aux_updated = cone.inv_hess_aux_updated = false
+                            cone.hess_fact_updated = cone.dder3_aux_updated = false
     )
 end
-
-use_sqrt_hess_oracles(::Int, cone::EpiQKDTri) = false
 
 function setup_extra_data!(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     d = cone.d
@@ -161,8 +156,6 @@ function setup_extra_data!(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex
     cone.ρ_λ_inv = zeros(T, d)
     cone.Gρ_λ_log = zeros(T, Gd)
     cone.Zρ_λ_log = [zeros(T, s) for s ∈ Zd]
-
-    cone.Hρ = zeros(T, ρ_dim, ρ_dim)
 
     cone.mat = zeros(R, d, d)
     cone.mat2 = zeros(R, d, d)
@@ -409,41 +402,27 @@ function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDT
     return prod
 end
 
-function update_inv_hess_auxold(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
-    @assert !cone.inv_hess_aux_updated
-    @assert cone.grad_updated
-    @assert cone.hess_aux_updated
+function update_hess(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
+    cone.hess_aux_updated || update_hess_aux(cone)
+    isdefined(cone, :hess) || alloc_hess!(cone)
 
-    rt2 = cone.rt2
-    dzdρ = cone.dzdρ
-    d2zdρ2 = cone.d2zdρ2
-    d2zdρ2G = cone.d2zdρ2G
-    d2zdρ2Z = cone.d2zdρ2Z
-    (Gρ_λ, Gρ_U) = cone.Gρ_fact
-
-    zi = inv(cone.z)
-
-    symm_kron!(cone.Hρ, cone.ρ_inv, rt2) # (ρ⁻¹) ̅ ⊗ρ⁻¹
-
-    @. cone.Hρ -= zi * d2zdρ2 # - 1/u ∇²ᵨᵨu + (ρ⁻¹) ̅ ⊗ρ⁻¹
-
-    cone.Hρ_fact = Hypatia.posdef_fact!(Symmetric(cone.Hρ))
-    cone.inv_hess_aux_updated = true
-    return
-end
-
-function update_inv_hess_aux(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
-    @assert !cone.inv_hess_aux_updated
-    @assert cone.grad_updated
-    @assert cone.hess_aux_updated
-
+    H = cone.hess.data
     Gk = cone.Gk
     Zk = cone.Zk
     rt2 = cone.rt2
     dzdρ = cone.dzdρ
     d2zdρ2 = cone.d2zdρ2
+    ρ_idxs = cone.ρ_idxs
     Gρ_U = cone.Gρ_fact.vectors
     Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
+
+    zi = inv(cone.z)
+    H[1, 1] = abs2(zi)
+    @. @views H[1, ρ_idxs] = abs2(zi) * dzdρ
+
+    @views Hρ = H[ρ_idxs, ρ_idxs]
+    symm_kron!(Hρ, cone.ρ_inv, rt2)
+    mul!(Hρ, dzdρ, dzdρ', abs2(zi), true)
 
     if cone.are_blocks_small #for small blocks it's more efficient to compute the little pieces with hessian_spectral_function! and later expand them into d2zdρ2
         d2zdρ2G = cone.d2zdρ2G
@@ -492,33 +471,10 @@ function update_inv_hess_aux(cone::EpiQKDTri{T,R}) where {T<:Real,R<:RealOrCompl
         end
     end
 
-    symm_kron!(cone.Hρ, cone.ρ_inv, rt2) # (ρ⁻¹) ̅ ⊗ρ⁻¹
-    @. cone.Hρ -= inv(cone.z) * d2zdρ2 # - 1/u ∇²ᵨᵨu + (ρ⁻¹) ̅ ⊗ρ⁻¹
+    @. Hρ -= zi * d2zdρ2
 
-    cone.Hρ_fact = Hypatia.posdef_fact!(Symmetric(cone.Hρ))
-    cone.inv_hess_aux_updated = true
-    return
-end
-
-#uses the decomposition from appendix B.2 of arXiv:2407.00241
-function inv_hess_prod!(
-    prod::AbstractVecOrMat{T},
-    arr::AbstractVecOrMat{T},
-    cone::EpiQKDTri{T,R}
-) where {T<:Real,R<:RealOrComplex{T}}
-    @assert cone.grad_updated
-    cone.hess_aux_updated || update_hess_aux(cone)
-    cone.inv_hess_aux_updated || update_inv_hess_aux(cone)
-    ρ_idxs = cone.ρ_idxs
-    dzdρ = cone.dzdρ
-
-    u = arr[1, :]
-    V = arr[ρ_idxs, :]
-
-    @views ldiv!(prod[ρ_idxs, :], cone.Hρ_fact, V .- dzdρ * u')
-    prod[1, :] = abs2(cone.z) * u - prod[ρ_idxs, :]' * dzdρ
-
-    return prod
+    cone.hess_updated = true
+    return cone.hess
 end
 
 function update_dder3_aux(cone::EpiQKDTri)

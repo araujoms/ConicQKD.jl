@@ -22,7 +22,6 @@ import Hypatia.Cones:
     update_grad,
     update_hess,
     update_hess_aux,
-    inv_hess_prod!,
     hess_prod!,
     use_dder3,
     update_dder3_aux,
