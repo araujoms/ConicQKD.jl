@@ -84,7 +84,7 @@ function test_oracles(
     # @test inv_hess * dual_point ≈ point atol = tol rtol = tol
     # @test Cones.inv_hess_prod!(prod_vec, dual_point, cone) ≈ point atol = tol rtol = tol
     # @test hess * inv_hess ≈ I atol = tol rtol = tol
-    #
+
     # generate random valid point
     random_point!(point, cone)
 
@@ -101,46 +101,29 @@ function test_oracles(
     @test dot(point, grad) ≈ -nu atol = tol rtol = tol
 
     hess = Matrix(Cones.hess(cone))
-    #inv_hess = Matrix(Cones.inv_hess(cone))
-    #@test hess * inv_hess ≈ I atol = tol rtol = tol
-    #
+    inv_hess = Matrix(Cones.inv_hess(cone))
+    @test hess * inv_hess ≈ I atol = tol rtol = tol
+
     @test hess * point ≈ -grad atol = tol rtol = tol
     prod_vec = zero(point)
     @test Cones.hess_prod!(prod_vec, point, cone) ≈ -grad atol = tol rtol = tol
-    #@test Cones.inv_hess_prod!(prod_vec, grad, cone) ≈ -point atol = tol rtol = tol
-    #
-    #prod_mat = zeros(T, dim, dim)
-    #@test Cones.hess_prod!(prod_mat, inv_hess, cone) ≈ I atol = tol rtol = tol
-    #@test Cones.inv_hess_prod!(prod_mat, hess, cone) ≈ I atol = tol rtol = tol
-    #
-    #psi = dual_point + grad
-    #proxsqr = dot(psi, Cones.inv_hess_prod!(prod_vec, psi, cone))
-    #@test Cones.get_proxsqr(cone, one(T), false) ≈ proxsqr atol = tol rtol = tol
-    #
-    #    if hasproperty(cone, :use_hess_prod_slow)
-    #        Cones.update_use_hess_prod_slow(cone)
-    #        @test cone.use_hess_prod_slow_updated
-    #        @test !cone.use_hess_prod_slow
-    #        cone.use_hess_prod_slow = true
-    #        @test Cones.hess_prod_slow!(prod_mat, inv_hess, cone) ≈ I atol = tol rtol = tol
-    #    end
-    #
-    #    #    if Cones.use_sqrt_hess_oracles(dim + 1, cone)
-    #    #        prod_mat2 = Matrix(Cones.sqrt_hess_prod!(prod_mat, inv_hess, cone)')
-    #    #        @test Cones.sqrt_hess_prod!(prod_mat, prod_mat2, cone) ≈ I atol = tol rtol = tol
-    #    #        Cones.inv_sqrt_hess_prod!(prod_mat2, Matrix(one(T) * I, dim, dim), cone)
-    #    #        @test prod_mat2' * prod_mat2 ≈ inv_hess atol = tol rtol = tol
-    #    #    end
-    #
-    #    # test third order deriv oracle
-    #    if Cones.use_dder3(cone)
-    #        @test -Cones.dder3(cone, point) ≈ grad atol = tol rtol = tol
-    #
-    #        dir = perturb_scale!(zeros(T, dim), noise, one(T))
-    #        dder3 = Cones.dder3(cone, dir)
-    #        #        @test dot(dder3, point) ≈ dot(dir, hess * dir) atol = tol rtol = tol
-    #    end
-    #
+
+    prod_mat = zeros(T, dim, dim)
+    @test Cones.hess_prod!(prod_mat, inv_hess, cone) ≈ I atol = tol rtol = tol
+
+    psi = dual_point + grad
+    proxsqr = dot(psi, Cones.inv_hess_prod!(prod_vec, psi, cone))
+    @test Cones.get_proxsqr(cone, one(T), false) ≈ proxsqr atol = tol rtol = tol
+
+    # test third order deriv oracle
+    if Cones.use_dder3(cone)
+        @test -Cones.dder3(cone, point) ≈ grad atol = tol rtol = tol
+
+        dir = perturb_scale!(zeros(T, dim), noise, one(T))
+        dder3 = Cones.dder3(cone, dir)
+        @test dot(dder3, point) ≈ dot(dir, hess * dir) atol = tol rtol = tol
+    end
+
     return
 end
 
@@ -169,11 +152,6 @@ function test_barrier(
     fd_grad = ForwardDiff.gradient(barrier, TFD_point)
     @test Cones.grad(cone) ≈ fd_grad atol = tol rtol = tol
 
-    #hess = Cones.hess(cone)
-    #fd_hess = ForwardDiff.hessian(barrier, TFD_point)
-    #display(hess)
-    #display(fd_hess)
-
     dir = 10 * randn(T, dim)
     TFD_dir = TFD.(dir)
 
@@ -182,20 +160,19 @@ function test_barrier(
     fd_hess_dir = ForwardDiff.gradient(s -> ForwardDiff.derivative(t -> barrier_dir(s, t), 0), TFD_point)
 
     @test Cones.hess(cone) * dir ≈ fd_hess_dir atol = tol rtol = tol
-    #    #    @test Cones.inv_hess(cone) * fd_hess_dir ≈ dir atol = tol rtol = tol
+    @test Cones.inv_hess(cone) * fd_hess_dir ≈ dir atol = tol rtol = tol
     prod_vec = zero(dir)
     @test Cones.hess_prod!(prod_vec, dir, cone) ≈ fd_hess_dir atol = tol rtol = tol
-    #    @test Cones.inv_hess_prod!(prod_vec, fd_hess_dir, cone) ≈ dir atol = tol rtol = tol
-    #
-    #    if Cones.use_dder3(cone)
-    #        fd_third_dir = ForwardDiff.gradient(
-    #            s2 -> ForwardDiff.derivative(s -> ForwardDiff.derivative(t -> barrier_dir(s2, t), s), 0),
-    #            TFD_point
-    #        )
-    #
-    #        @test -2 * Cones.dder3(cone, dir) ≈ fd_third_dir atol = tol rtol = tol
-    #    end
-    #
+
+    if Cones.use_dder3(cone)
+        fd_third_dir = ForwardDiff.gradient(
+            s2 -> ForwardDiff.derivative(s -> ForwardDiff.derivative(t -> barrier_dir(s2, t), s), 0),
+            TFD_point
+        )
+
+        @test -2 * Cones.dder3(cone, dir) ≈ fd_third_dir atol = tol rtol = tol
+    end
+
     return
 end
 

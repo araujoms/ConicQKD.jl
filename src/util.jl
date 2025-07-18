@@ -446,12 +446,6 @@ function Δ3generic(Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vector{T}) where {T<:R
     return Δ3generic!(Δ3, Δ2, λ, d2fλ)
 end
 
-function ket(::Type{T}, i::Integer, d::Integer) where {T}
-    ψ = zeros(T, d)
-    ψ[i] = 1
-    return ψ
-end
-
 function d_spectral(Δ2::Matrix{T}, K::Matrix{R}) where {T<:Real,R<:RealOrComplex{T}}
     dout, din = size(K)
     d = Cones.svec_length(R, din)
