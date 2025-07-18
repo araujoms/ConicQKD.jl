@@ -228,6 +228,18 @@ function d_spectral!(
     return skr
 end
 
+#useful when K is square
+function d_spectral!(
+    skr::AbstractMatrix{T},
+    Δ2::Matrix{T},
+    K::Union{Matrix{R},Vector{Matrix{R}}},
+    temp1::Matrix{R},
+    temp2::Matrix{R},
+    rt2::T
+) where {T<:Real,R<:RealOrComplex{T}}
+    return d_spectral!(skr, Δ2, K, temp1, temp2, temp1, temp2, rt2)
+end
+
 for (matrixtype, wrapper) ∈ ((:AbstractMatrix, :identity), (:Symmetric, :Symmetric), (:Hermitian, :Hermitian))
     @eval begin
         function applykraus(K::Vector{<:AbstractMatrix{T}}, M::$matrixtype{S}) where {T,S}

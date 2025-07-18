@@ -436,7 +436,7 @@ function update_hess(cone::EpiQKDTri)
         d2zdρ2Z = cone.d2zdρ2Z
 
         copyto!(Gmat, Gρ_U')
-        d_spectral!(d2zdρ2G, Δ2G, Gmat, Gmat2, Gmat3, Gmat2, Gmat3, rt2)
+        d_spectral!(d2zdρ2G, Δ2G, Gmat, Gmat2, Gmat3, rt2)
         if cone.is_G_identity
             d2zdρ2 .= -1 .* d2zdρ2G
         else
@@ -447,7 +447,7 @@ function update_hess(cone::EpiQKDTri)
         for i ∈ eachindex(cone.blocks)
             copyto!(Zmat[i], Zρ_U[i]')
         end
-        d_spectral!.(d2zdρ2Z, Δ2Z, Zmat, Zmat2, Zmat3, Zmat2, Zmat3, Ref(rt2))
+        d_spectral!.(d2zdρ2Z, Δ2Z, Zmat, Zmat2, Zmat3, Ref(rt2))
         for i ∈ 1:cone.nblocks
             mul!(cone.big_Zmat[i], cone.Zadj[i], d2zdρ2Z[i])
             mul!(d2zdρ2, cone.big_Zmat[i], cone.Z[i], true, true)
