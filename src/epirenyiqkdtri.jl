@@ -9,7 +9,6 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Zd::Vector{Int}
     ZD::Int
     is_complex::Bool
-    are_blocks_small::Bool
     nblocks::Int
     blocks::Vector{UnitRange{Int}}
 
@@ -75,6 +74,8 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     d2Ψdρ2vec::Vector{T}
     d2Ψdρ2::Matrix{T}
     DhZmeat::Vector{Matrix{R}}
+    ds_g̃_ZGZ::Matrix{T} #TODO check if it's being reused in dder3
+    ds_h_Zρ::Vector{Matrix{T}}
 
     ZG::Matrix{R}
     #variables below are just scratch space
@@ -86,6 +87,7 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Gmat3::Matrix{R}
     Gmat4::Matrix{R}
     Gρmat::Matrix{R}
+    Gρmatvec::Vector{Matrix{R}}
     Zmat::Vector{Matrix{R}}
     Zmat2::Vector{Matrix{R}}
     Zmat3::Vector{Matrix{R}}
@@ -93,15 +95,18 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     ZGmat::Vector{Matrix{R}}
     ZGmat2::Vector{Matrix{R}}
 
-    big_mat::Matrix{T}
     vec::Vector{T}
     Gvec::Vector{T}
     Zvec::Vector{Vector{T}}
 
+    big_ρmat::Matrix{T}
     big_Gmat::Matrix{T}
+    big_Gρmat::Matrix{T}
+    big_ρGmat::Matrix{T}
+    big_ρGmat2::Matrix{T}
     big_Zmat::Vector{Matrix{T}}
-    d2Ψdρ2G::Matrix{T}
-    d2Ψdρ2Z::Vector{Matrix{T}}
+    big_ZGmat::Vector{Matrix{T}}
+    big_ρZmat::Vector{Matrix{T}}
 
     function EpiRenyiQKDTri{T,R}(
         α::T,
@@ -143,13 +148,10 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         else
             cone.S = convert(Matrix{R}, S)
         end
-        cone.are_blocks_small = maximum(cone.Zd) <= isqrt(cone.d)
-        #if cone.are_blocks_small
         cone.G = kraus2matrix(Gkraus)
         cone.Z = [kraus2matrix([Zk[blocks[i], :] for Zk ∈ Zkraus]) for i ∈ 1:length(blocks)]
         cone.Gadj = Matrix(cone.G')
         cone.Zadj = Matrix.(adjoint.(cone.Z))
-        #end
         return cone
     end
 end
@@ -209,6 +211,7 @@ function setup_extra_data!(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrCo
     cone.Gmat3 = zeros(R, Gd, Gd)
     cone.Gmat4 = zeros(R, Gd, Gd)
     cone.Gρmat = zeros(R, Gd, d)
+    cone.Gρmatvec = [zeros(R, Gd, d) for _ ∈ 1:length(cone.Gk)]
     cone.Zmat = [zeros(R, s, s) for s ∈ Zd]
     cone.Zmat2 = [zeros(R, s, s) for s ∈ Zd]
     cone.Zmat3 = [zeros(R, s, s) for s ∈ Zd]
@@ -217,16 +220,19 @@ function setup_extra_data!(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrCo
     cone.Zρmat = [zeros(R, s, d) for s ∈ Zd]
     cone.ZG = zeros(R, Gd, Gd)
 
-    cone.big_mat = zeros(T, ρ_dim, ρ_dim)
     cone.vec = zeros(T, ρ_dim)
     cone.Gvec = zeros(T, Gρ_dim)
     cone.Zvec = [zeros(T, s) for s ∈ Zρ_dim]
-    if cone.are_blocks_small
-        cone.d2Ψdρ2G = zeros(T, Gρ_dim, Gρ_dim)
-        cone.d2Ψdρ2Z = [zeros(T, s, s) for s ∈ Zρ_dim]
-        cone.big_Gmat = zeros(T, ρ_dim, Gρ_dim)
-        cone.big_Zmat = [zeros(T, ρ_dim, s) for s ∈ Zρ_dim]
-    end
+    cone.ds_g̃_ZGZ = zeros(T, Gρ_dim, Gρ_dim)
+    cone.ds_h_Zρ = [zeros(T, s, s) for s ∈ Zρ_dim]
+    cone.big_ρmat = zeros(T, ρ_dim, ρ_dim)
+    cone.big_Gmat = zeros(T, Gρ_dim, Gρ_dim)
+    cone.big_Gρmat = zeros(T, Gρ_dim, ρ_dim)
+    cone.big_ρGmat = zeros(T, ρ_dim, Gρ_dim)
+    cone.big_ρGmat2 = zeros(T, ρ_dim, Gρ_dim)
+    cone.big_Zmat = [zeros(T, s, s) for s ∈ Zρ_dim]
+    cone.big_ZGmat = [zeros(T, s, Gρ_dim) for s ∈ Zρ_dim]
+    cone.big_ρZmat = [zeros(T, ρ_dim, s) for s ∈ Zρ_dim]
     return
 end
 
@@ -556,7 +562,6 @@ function d2Ψdρ2!(
     #ZG Z' ∘ Dh(Zρ)[S Z_S^-½ ⋅Z_S^-½ S'] ∘ Dg̃(Z_S^½ Gρ Z_S^½)[Z_S^½ ⋅ Z_S^½] ∘ G
     Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
     Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
-    Zρ_Uadj = [Matrix(fact.vectors') for fact ∈ cone.Zρ_fact]
     Gmat3 = U_ZGZ' * cone.sqrtShZρ
     if cone.is_G_identity
         spectral_outer!(Gmat2, Gmat3, Hermitian(ρ_arr_mat), Gmat4)
@@ -667,10 +672,21 @@ function update_hess(cone::EpiRenyiQKDTri)
     zi = inv(cone.z)
     α = cone.α
     Gρ = cone.Gρ
+    Gk = cone.Gk
+    Gmat = cone.Gmat
+    Gmat2 = cone.Gmat2
+    Gmat3 = cone.Gmat3
+    Gmat4 = cone.Gmat4
+    Zmat = cone.Zmat
+    Zmat2 = cone.Zmat2
+    Zmat3 = cone.Zmat3
     sqrtGρ = cone.sqrtGρ
     blocks = cone.blocks
     S = cone.S
     d2Ψdρ2 = cone.d2Ψdρ2
+    ds_g̃_ZGZ = cone.ds_g̃_ZGZ
+    ds_h_Zρ = cone.ds_h_Zρ
+    sqrtShZρ = cone.sqrtShZρ
 
     g(x) = x^α
     dg(x) = α * x^(α - 1)
@@ -689,57 +705,85 @@ function update_hess(cone::EpiRenyiQKDTri)
 
     #GG G' ∘ (Z_S^½ ⋅Z_S^½) ∘ Ddg(Z_S^½ Gρ Z_S^½)[⋅] ∘ (Z_S^½ ⋅Z_S^½) ∘ G
     U_ZGZ = cone.ZG_fact.U
-    dsf_dg_ZGZ = d_spectral(cone.Δ2_dg_ZGZ, U_ZGZ' * cone.sqrtShZρ')
-    d2Ψdρ2 .= cone.Gadj * dsf_dg_ZGZ * cone.G
+    for i ∈ eachindex(Gk)
+        mul!(cone.Gρmat, sqrtShZρ, Gk[i])
+        mul!(cone.Gρmatvec[i], U_ZGZ', cone.Gρmat)
+    end
+    d_spectral!(d2Ψdρ2, cone.Δ2_dg_ZGZ, cone.Gρmatvec, Gmat2, Gmat3, cone.Gρmat, cone.mat, cone.rt2)
 
     #ZG Z' ∘ Dh(Zρ)[S Z_S^-½ ⋅Z_S^-½ S'] ∘ Dg̃(Z_S^½ Gρ Z_S^½)[Z_S^½ ⋅ Z_S^½) ∘ G
     Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
-    Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
-    Zρ_Uadj = [Matrix(fact.vectors') for fact ∈ cone.Zρ_fact]
-    dsf_g̃_ZGZ = d_spectral(cone.Δ2_g̃_ZGZ, Matrix(U_ZGZ'))
-    vecZZ = skron(cone.sqrtShZρ)
-
-    dsf_h_Zρ = d_spectral.(cone.Δ2_h_Zρ, Zρ_Uadj)
-    if cone.is_S_identity
-        temp = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(cone.invsqrtShZρ[blocks[i], :]) for i ∈ eachindex(blocks))
-    else
-        temp =
-            sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(S[blocks[i], :]) for i ∈ eachindex(blocks)) * skron(cone.invsqrtShZρ)
+    for i ∈ eachindex(cone.blocks)
+        copyto!(cone.Zmat3[i], cone.Zρ_fact[i].vectors')
     end
-    HZG = temp * dsf_g̃_ZGZ * vecZZ * cone.G
-    d2Ψdρ2 .+= HZG
-    d2Ψdρ2 .+= HZG'
+    Zρ_Uadj = cone.Zmat3
+    copyto!(Gmat, U_ZGZ')
+    d_spectral!(ds_g̃_ZGZ, cone.Δ2_g̃_ZGZ, Gmat, Gmat2, Gmat3, cone.rt2)
+    d_spectral!.(ds_h_Zρ, cone.Δ2_h_Zρ, Zρ_Uadj, Zmat, Zmat2, Ref(cone.rt2))
+    fill!(cone.big_ρGmat, 0)
+    if cone.is_S_identity
+        for i ∈ eachindex(blocks)
+            mul!(cone.big_ρZmat[i], cone.Zadj[i], ds_h_Zρ[i])
+            @views symm_kron_full!(cone.big_ZGmat[i], cone.invsqrtShZρ[blocks[i], :], cone.rt2)
+            mul!(cone.big_ρGmat, cone.big_ρZmat[i], cone.big_ZGmat[i], true, true)
+        end
+    else
+        symm_kron!(cone.big_Gmat, cone.invsqrtShZρ, cone.rt2)
+        for i ∈ eachindex(blocks)
+            mul!(cone.big_ρZmat[i], cone.Zadj[i], ds_h_Zρ[i])
+            @views symm_kron_full!(cone.big_ZGmat[i], S[blocks[i], :], cone.rt2)
+            mul!(cone.big_ρGmat2, cone.big_ρZmat[i], cone.big_ZGmat[i])
+            mul!(cone.big_ρGmat, cone.big_ρGmat2, Hermitian(cone.big_Gmat), true, true)
+        end
+    end
+    symm_kron!(cone.big_Gmat, cone.sqrtShZρ, cone.rt2)
+    mul!(cone.big_ρGmat2, cone.big_ρGmat, ds_g̃_ZGZ)
+    mul!(cone.big_ρGmat, cone.big_ρGmat2, Hermitian(cone.big_Gmat))
+    mul!(cone.big_ρmat, cone.big_ρGmat, cone.G)
+    d2Ψdρ2 .+= cone.big_ρmat
+    d2Ψdρ2 .+= cone.big_ρmat'
 
     #ZZ Z' ∘ Dh(Zρ)[S Gρ^½ ⋅ Gρ^½ S'] ∘ Ddg(Gρ^½ Z_S Gρ^½)[Gρ^½ S' ⋅S Gρ^½] ∘ Dh(Zρ)[⋅] ∘ Z
-    ##    + Z' ∘ D²h(Zρ)[ ⋅, S Gρ^½ dg(Gρ^½ Z_S Gρ^½) Gρ^½ S'] ∘ Z
     U_GZG = cone.ZG_fact.V
     Δ2_dg_GZG = cone.Δ2_dg_ZGZ
 
+    fill!(cone.big_ρGmat, 0)
     if cone.is_S_identity
-        dsf_dg_GZG = d_spectral(Δ2_dg_GZG, Matrix(U_GZG'))
-        a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(sqrtGρ[blocks[i], :]) for i ∈ eachindex(blocks))
-        first_term = a * dsf_dg_GZG * a'
+        copyto!(Gmat, U_GZG')
+        d_spectral!(cone.big_Gmat, Δ2_dg_GZG, Gmat, Gmat2, Gmat3, cone.rt2)
+        for i ∈ eachindex(blocks)
+            mul!(cone.big_ρZmat[i], cone.Zadj[i], ds_h_Zρ[i])
+            @views symm_kron_full!(cone.big_ZGmat[i], sqrtGρ[blocks[i], :], cone.rt2)
+            mul!(cone.big_ρGmat, cone.big_ρZmat[i], cone.big_ZGmat[i], true, true)
+        end
+        mul!(cone.big_ρGmat2, cone.big_ρGmat, cone.big_Gmat)
     else
-        dsf_dg_GZG2 = d_spectral(Δ2_dg_GZG, U_GZG' * sqrtGρ)
-        a = sum(cone.Zadj[i] * dsf_h_Zρ[i] * skron(S[blocks[i], :]) for i ∈ eachindex(blocks))
-        first_term = a * dsf_dg_GZG2 * a' #FIXME reuse a
+        mul!(Gmat, U_GZG', sqrtGρ)
+        d_spectral!(cone.big_Gmat, Δ2_dg_GZG, Gmat, Gmat2, Gmat3, cone.rt2)
+        for i ∈ eachindex(blocks)
+            mul!(cone.big_ρZmat[i], cone.Zadj[i], ds_h_Zρ[i])
+            @views symm_kron_full!(cone.big_ZGmat[i], S[blocks[i], :], cone.rt2)
+            mul!(cone.big_ρGmat, cone.big_ρZmat[i], cone.big_ZGmat[i], true, true)
+        end
+        mul!(cone.big_ρGmat2, cone.big_ρGmat, cone.big_Gmat)
     end
+    mul!(d2Ψdρ2, cone.big_ρGmat2, cone.big_ρGmat', true, true)
 
-    dim = Cones.svec_length.(Ref(eltype(S)), cone.Zd)
-    second_term_vec = [zeros(typeof(α), dim[i], dim[i]) for i ∈ eachindex(blocks)]
-    d2_spectral!.(second_term_vec, Zρ_Uadj, cone.Δ3_h_ZρW̃, cone.Zmat, cone.Zmat2, Ref(cone.rt2))
-    second_term = sum(cone.Zadj[i] * second_term_vec[i] * cone.Z[i] for i ∈ eachindex(blocks))
-    d2Ψdρ2 .+= first_term
-    d2Ψdρ2 .+= second_term
+    ##    + Z' ∘ D²h(Zρ)[ ⋅, S Gρ^½ dg(Gρ^½ Z_S Gρ^½) Gρ^½ S'] ∘ Z
+    #TODO: incorporate Z and Zadj in d2_spectral!
+    d2_spectral!.(cone.big_Zmat, Zρ_Uadj, cone.Δ3_h_ZρW̃, cone.Zmat, cone.Zmat2, Ref(cone.rt2))
+    for i ∈ eachindex(blocks)
+        mul!(cone.big_ρZmat[i], cone.Zadj[i], cone.big_Zmat[i])
+        mul!(d2Ψdρ2, cone.big_ρZmat[i], cone.Z[i], true, true)
+    end
 
     @. Hρ += zi * cone.sα * d2Ψdρ2 #∇ρρ += sα/z ∇ρρ Ψ
     #logdet part
-    symm_kron!(cone.big_mat, cone.ρ_inv, cone.rt2) # ∇ρρ += skron(ρ⁻¹)
-    Hρ .+= cone.big_mat
+    symm_kron!(cone.big_ρmat, cone.ρ_inv, cone.rt2) # ∇ρρ += skron(ρ⁻¹)
+    Hρ .+= cone.big_ρmat
     cone.hess_updated = true
     return cone.hess
 end
-
 
 function d3Ψdρ3!(
     d3Ψdρ3vec::AbstractVector{T},
@@ -752,7 +796,6 @@ function d3Ψdρ3!(
     return d3Ψdρ3vec
 end
 
-
 function update_dder3_aux(cone::EpiRenyiQKDTri)
     @assert !cone.dder3_aux_updated
     cone.hess_aux_updated || update_hess_aux(cone)
@@ -763,9 +806,7 @@ function update_dder3_aux(cone::EpiRenyiQKDTri)
     return
 end
 
-
 function dder3(cone::EpiRenyiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:RealOrComplex{T}}
-
     cone.dder3_aux_updated || update_dder3_aux(cone)
 
     dder3 = cone.dder3
