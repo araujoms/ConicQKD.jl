@@ -20,9 +20,11 @@ import Hypatia
 import Hypatia.PolyUtils
 import Hypatia.Cones
 import Hypatia.RealOrComplex
+import Hypatia.Cones.svec_to_smat!
+
 import ConicQKD.EpiQKDTri
 import ConicQKD.EpiRenyiQKDTri
-
+import ConicQKD.d3Ψdρ3!
 import ConicQKD.kraus2matrix
 import ConicQKD.skron
 import ConicQKD.svec
@@ -175,6 +177,55 @@ function test_barrier(
 
     return
 end
+
+# Test d3Ψdρ3
+function test_d3Ψdρ3(
+    cone::Cones.Cone{T},
+    renyi2_barrier::Function;
+    noise::T = T(1e-1),
+    scale::T = T(1e-1),
+    tol::Real = 1e8 * eps(T),
+    TFD::Type{<:Real} = T
+) where {T<:Real}
+    Random.seed!(1)
+    dim = Cones.dimension(cone)
+    Cones.setup_data!(cone)
+
+    point = zeros(T, dim)
+    Cones.set_initial_point!(point, cone)
+    random_point!(point, cone)
+
+    Cones.reset_data(cone)
+    Cones.load_point(cone, point)
+    @test Cones.is_feas(cone)
+    TFD_point = TFD.(point)
+
+    dir = 10 * randn(T, dim - 1)
+    TFD_dir = TFD.(dir)
+
+    renyi2_dir(s, t) = renyi2_barrier(s + t * TFD_dir)
+
+    # grad = ForwardDiff.derivative(t -> renyi2_dir(TFD_point[2:dim], t), 0)
+    # fd_hess_dir = ForwardDiff.gradient(s -> ForwardDiff.derivative(t -> renyi2_dir(s, t), 0), TFD_point[2:dim])
+
+    if Cones.use_dder3(cone)
+        
+        fd_third_dir = ForwardDiff.gradient(
+            s2 -> ForwardDiff.derivative(s -> ForwardDiff.derivative(t -> renyi2_dir(s2, t), s), 0),
+            TFD_point[2:dim]
+        )
+
+        ρ_dir_mat = cone.mat
+        svec_to_smat!(ρ_dir_mat, dir, cone.rt2)
+
+        d3Ψdρ3!(cone.d2Ψdρ2vec, ρ_dir_mat, cone)
+
+        @test cone.d2Ψdρ2vec ≈ fd_third_dir atol = tol rtol = tol
+    end
+
+    return
+end
+
 
 # show time and memory allocation for oracles
 function show_time_alloc(cone::Cones.Cone{T}; noise::T = T(1e-4), scale::T = T(1e-1)) where {T<:Real}
@@ -403,6 +454,22 @@ function test_barrier(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
     end
     return test_barrier(cone(α, gkraus, zkraus, 1 + rho_dim; S, blocks), barrier; TFD = Float64)
 end
+
+
+function test_d3Ψdρ3(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
+    din, dout = 2, 3
+    α, gkraus, zkraus, rho_dim, rho_idxs, blocks, S = random_protocol(cone, din, dout)
+    G = kraus2matrix(gkraus)
+    Z = kraus2matrix(zkraus)
+
+    function renyi2_barrier(point)
+        GrhoH = smat(G * point)
+        ZrhoH = smat(Z * point)
+        return renyi2(GrhoH, ZrhoH, α, S)
+    end
+    return test_d3Ψdρ3(cone(α, gkraus, zkraus, 1 + rho_dim; S, blocks), renyi2_barrier; TFD = Float64)
+end
+
 
 function show_time_alloc(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
     din, dout = 4, 5

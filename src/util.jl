@@ -319,6 +319,43 @@ function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vect
     return Δ3
 end
 
+
+function Δ4generic!(Δ4::Array{T, 4}, Δ3::Array{T, 3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
+    # TODO: maybe computing slices is more efficient...
+    rteps = sqrt(eps(T))
+    d = length(λ)
+
+    # ! revisar
+    @inbounds for l ∈ 1:d, k ∈ 1:l, j ∈ 1:k, i ∈ 1:j
+        λi, λj, λk, λl = λ[i], λ[j], λ[k], λ[l]
+
+        # Check λi ≈ λl
+        if abs(λi - λl) < rteps
+            # Check λi ≈ λj ≈ λk ≈ λl
+            if abs(λi - λj) < rteps && abs(λj - λk) < rteps
+                t = d3fλ[i] / 6
+            else
+                # Partially repeated nodes
+                t = (Δ3[i, j, k] - Δ3[j, k, l]) / (λi - λj)
+            end
+        else
+            # General case
+            t = (Δ3[i, j, k] - Δ3[j, k, l]) / (λi - λl)
+            Δ4[i, j, k, l] = t
+        end
+
+        # Store symmetrically in all 4! = 24 permutations
+        for a in (i, j, k, l), b in (i, j, k, l), c in (i, j, k, l), e in (i, j, k, l)
+            if length(Set((a, b, c, e))) == 4  # all indices distinct
+                Δ4[a, b, c, e] = t
+            end
+        end
+    end
+    return Δ4
+end
+
+
+
 if VERSION.minor == 12
     import LinearAlgebra.generic_matmatmul_wrapper!
     import LinearAlgebra:
