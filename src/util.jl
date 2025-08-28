@@ -321,7 +321,6 @@ end
 
 
 function Δ4generic!(Δ4::Array{T, 4}, Δ3::Array{T, 3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
-    # TODO: maybe computing slices is more efficient...
     rteps = sqrt(eps(T))
     d = length(λ)
 
@@ -354,6 +353,44 @@ function Δ4generic!(Δ4::Array{T, 4}, Δ3::Array{T, 3}, λ::Vector{T}, d3fλ::V
     return Δ4
 end
 
+function Δ4generic_ij!(
+    Δ4_ij::Matrix{T},
+    i::Int,
+    j::Int,
+    Δ3::Array{T, 3},
+    λ::Vector{T},
+    d3fλ::Vector{T}
+) where {T <: Real}
+    rteps = sqrt(eps(T))
+    d = length(λ)
+    λ_i = λ[i]
+    λ_j = λ[j]
+
+    @inbounds for l in 1:d, k in 1:l
+        λ_k = λ[k]
+        λ_l = λ[l]
+        λ_ij = λ_i - λ_j
+        λ_ik = λ_i - λ_k
+        λ_il = λ_i - λ_l
+        B_ik = (abs(λ_ik) < rteps)
+        B_il = (abs(λ_il) < rteps)
+
+        if (abs(λ_ij) < rteps) && B_ik && B_il
+            t = d3fλ[i] / 6
+        elseif B_ik && B_il
+            t = (Δ3[i, i, i] - Δ3[i, i, j]) / λ_ij
+        elseif B_il
+            t = (Δ3[i, i, j] - Δ3[i, j, k]) / λ_ik
+        else
+            t = (Δ3[i, j, k] - Δ3[j, k, l]) / λ_il
+        end
+
+        Δ4_ij[k, l] = t
+        Δ4_ij[l, k] = t
+    end
+
+    return Δ4_ij
+end
 
 
 if VERSION.minor == 12
@@ -483,6 +520,18 @@ function Δ3generic(Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vector{T}) where {T<:R
     return Δ3generic!(Δ3, Δ2, λ, d2fλ)
 end
 
+function Δ4generic(Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
+    d = length(λ)
+    Δ4 = Array{T,4}(undef, d, d, d, d)
+    return Δ4generic!(Δ4, Δ3, λ, d3fλ)
+end
+
+function Δ4generic_ij(i, j, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
+    d = length(λ)
+    Δ4_ij = Matrix{T}(undef, d, d)
+    return Δ4generic_ij!(Δ4_ij, i, j, Δ3, λ, d3fλ)
+end
+
 function d_spectral(Δ2::Matrix{T}, K::Matrix{R}) where {T<:Real,R<:RealOrComplex{T}}
     dout, din = size(K)
     d = Cones.svec_length(R, din)
@@ -577,4 +626,42 @@ function spectral_outer!(
     mul!(temp, symm, vecs')
     mul!(mat, vecs, temp)
     return mat
+end
+
+function first_frechet(Δ2, U, H)
+    return U * (Δ2 .* (U' * H * U)) * U'
+end
+
+function second_frechet(Δ3, U, H1, H2)
+    second_der = zeros(eltype(H1), size(H1))
+    for k in 1:size(Δ3, 3)
+        fk = (U' * (H1 * U[:,k])) * ((U[:,k]' * H2) * U)
+        second_der += Δ3[:,:,k] .* (fk+fk')
+    end
+    return U * second_der * U'
+end
+
+function second_frechet(Δ3, U, H1)
+    return second_frechet(Δ3, U, H1, H1)
+end
+
+function third_frechet(Δ3, λ, d3fλ, U, H1, H2)
+    third_der = zeros(eltype(H1), size(H1))
+
+    H1 = U' * H1 * U
+    H2 = U' * H2 * U
+    for j in 1:size(Δ3, 1)
+        for k in 1:size(Δ3, 1)
+                Δ4_ij = Δ4generic_ij(j, k, Δ3, λ, d3fλ)
+                for b ∈ 1:size(Δ3, 1)
+                    for a ∈ 1:size(Δ3, 1)
+                        temp = 2 * H1[j, b] * H2[b, a] * H2[a, k]
+                        temp += 2 * H2[j, b] * (H1[b, a] * H2[a, k] + H2[b, a] * H1[a, k])
+                        third_der[j, k] += Δ4_ij[b, a] * temp
+                    end
+                end
+        end
+    end
+
+    return U * third_der * U'
 end
