@@ -839,6 +839,179 @@ function d3Ψdρ3!(
     Gmat2 = cone.Gmat2
     Gmat3 = cone.Gmat3
     Gmat4 = cone.Gmat4
+    DG = cone.Gmat5
+    Gξ = cone.Gmat6
+    Zmat = cone.Zmat
+    Zmat2 = cone.Zmat2
+    DZ = cone.Zmat3
+    Zξ = cone.Zmat4
+    ZGmat = cone.ZGmat
+    ZGmat2 = cone.ZGmat2
+    Zk = cone.Zk
+    Gk = cone.Gk
+
+    Δ2_h_Zρ = cone.Δ2_h_Zρ
+    Δ3_h_Zρ = cone.Δ3_h_Zρ
+    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
+    Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
+
+    α = cone.α
+    dg(x) = α * x^(α - 1)
+    d3h(x) = (1 / α - 1) * (1 / α - 2) * (1 / α - 3) * x^(1 / α - 4)
+
+
+    Δ2_dg_GZG = cone.Δ2_dg_ZGZ
+    Δ2_g̃_GZG = cone.Δ2_g̃_ZGZ
+    Δ3_dg_ZGZ = Δ3_dg_GZG = cone.Δ3_dg_ZGZ
+    Δ3_g̃_ZGZ = Δ3_g̃_GZG = cone.Δ3_g̃_ZGZ
+
+    rootGρ = cone.sqrtGρ
+    invrootGρ = cone.invsqrtGρ
+    ZSρ = cone.ShZρ
+    rootZSρ = cone.sqrtShZρ
+    invrootZSρ = cone.invsqrtShZρ
+    GZG = Hermitian(rootGρ * ZSρ * rootGρ)    
+    U_ZGZ = cone.ZG_fact.U
+    U_GZG = cone.ZG_fact.V
+
+    if cone.is_G_identity
+        Gξ .= ρ_arr_mat
+    else
+        applykraus!(Gξ, Gk, Hermitian(ρ_arr_mat), cone.Gρmat)  # G(ξ)
+    end
+    for i ∈ eachindex(blocks)
+        applykraus!(Zξ[i], Zk[i], Hermitian(ρ_arr_mat), cone.Zρmat[i])  # Z(ξ)
+    end
+
+    # GGG
+    ZS_Gξ = rootZSρ * Gξ * rootZSρ
+    DG .= rootZSρ * second_frechet(cone.Δ3_dg_ZGZ, U_ZGZ, ZS_Gξ) * rootZSρ
+
+    # GZG
+    fill!(Gmat, 0)
+    for i ∈ eachindex(blocks)
+        Gmat .+= S'[:, blocks[i]] * first_frechet(cone.Δ2_h_Zρ[i], Zρ_U[i], Zξ[i]) * S[blocks[i], :]
+    end
+    Dmeat1 = invrootZSρ * Gmat * invrootZSρ
+    DG .+= 2 * rootZSρ * second_frechet(cone.Δ3_g̃_ZGZ, U_ZGZ, ZS_Gξ, Dmeat1) * rootZSρ
+
+    # GZZ
+    fill!(Gmat, 0)
+    for i ∈ eachindex(blocks)
+        Gmat .+= S'[:, blocks[i]] * second_frechet(cone.Δ3_h_Zρ[i], Zρ_U[i], Zξ[i]) * S[blocks[i], :]
+    end
+
+    Dmeat1 = rootGρ * Gmat * rootGρ
+    DG .+= invrootGρ * first_frechet(cone.Δ2_g̃_ZGZ, U_GZG, Dmeat1) * invrootGρ
+
+    fill!(Gmat, 0)
+    for i ∈ eachindex(blocks)
+        Gmat .+= S'[:, blocks[i]] * first_frechet(cone.Δ2_h_Zρ[i], Zρ_U[i], Zξ[i]) * S[blocks[i], :]
+    end
+
+    Dmeat1 = rootGρ * Gmat * rootGρ
+    DG .+= invrootGρ * second_frechet(cone.Δ3_g̃_ZGZ, U_GZG, Dmeat1) * invrootGρ
+    
+
+    # ZGG
+    second_der = second_frechet(cone.Δ3_g̃_ZGZ, U_ZGZ, ZS_Gξ)
+    for i ∈ eachindex(blocks)
+        GGmeat = S[blocks[i], :] * invrootZSρ * second_der * invrootZSρ * S'[:, blocks[i]]
+        DZ[i] .= first_frechet(cone.Δ2_h_Zρ[i], Zρ_U[i], GGmeat)
+    end
+
+    # ZGZ
+    invGHg = invrootGρ * Gξ * invrootGρ
+    Gmat2 = rootGρ * first_frechet(cone.Δ2_g̃_ZGZ, U_GZG, invGHg) * rootGρ
+    fill!(Gmat, 0)
+    for i ∈ eachindex(blocks)
+        Dmeat1 = S[blocks[i], :] * Gmat2 * S'[:, blocks[i]]
+        DZ[i] .+= 2 * second_frechet(cone.Δ3_h_Zρ[i], Zρ_U[i], Zξ[i], Dmeat1)
+    end
+
+    fill!(Gmat, 0)
+    for i ∈ eachindex(blocks)
+        Gmat .+= S'[:, blocks[i]] * first_frechet(cone.Δ2_h_Zρ[i], Zρ_U[i], Zξ[i]) * S[blocks[i], :]
+    end
+    Gmat2 = rootGρ * Gmat * rootGρ
+    Gmat = rootGρ * second_frechet(cone.Δ3_g̃_ZGZ, U_GZG, Gmat2, invGHg) * rootGρ
+    for i ∈ eachindex(blocks)
+        Zmat[i] .= S[blocks[i], :] * Gmat * S'[:, blocks[i]]
+        DZ[i] .+= 2 * first_frechet(cone.Δ2_h_Zρ[i], Zρ_U[i], Zmat[i])
+    end
+
+    # ZZZ
+    Gmat = rootGρ * dg(GZG) * rootGρ
+    for i ∈ eachindex(blocks)
+        W = S[blocks[i], :] * Gmat * S'[:, blocks[i]]
+        # TODO: substitute W with cone.DhZmeat[i]
+        DZ[i] .+= third_frechet(cone.Δ3_h_Zρ[i], Zρ_λ[i], d3h.(Zρ_λ[i]), Zρ_U[i], W, Zξ[i])
+    end
+
+    fill!(Gmat, 0)
+    for i ∈ eachindex(blocks)
+        # TODO: reuse
+        Gmat .+= S'[:, blocks[i]] * first_frechet(cone.Δ2_h_Zρ[i], Zρ_U[i], Zξ[i]) * S[blocks[i], :]
+    end
+    Dmeat1 = rootGρ * Gmat * rootGρ
+    Gmat = rootGρ * first_frechet(cone.Δ2_dg_ZGZ, U_GZG, Dmeat1) * rootGρ
+    for i ∈ eachindex(blocks)
+        Dmeat2 = S[blocks[i], :] * Gmat * S'[:, blocks[i]]
+        DZ[i] .+= 2 * second_frechet(cone.Δ3_h_Zρ[i], Zρ_U[i], Dmeat2, Zξ[i])
+    end
+
+    fill!(Gmat, 0)
+    for i ∈ eachindex(blocks)
+        Gmat .+= S'[:, blocks[i]] * second_frechet(cone.Δ3_h_Zρ[i], Zρ_U[i], Zξ[i]) * S[blocks[i], :]
+    end
+    Dmeat1 = rootGρ * Gmat * rootGρ
+    Gmat = rootGρ * first_frechet(cone.Δ2_dg_ZGZ, U_GZG, Dmeat1) * rootGρ
+    for i ∈ eachindex(blocks)
+        Dmeat2 = S[blocks[i], :] * Gmat * S'[:, blocks[i]]
+        DZ[i] .+= first_frechet(cone.Δ2_h_Zρ[i], Zρ_U[i], Dmeat2)
+    end
+
+    fill!(Gmat, 0)
+    for i ∈ eachindex(blocks)
+        Gmat .+= S'[:, blocks[i]] * first_frechet(cone.Δ2_h_Zρ[i], Zρ_U[i], Zξ[i]) * S[blocks[i], :]
+    end
+    Dmeat1 = rootGρ * Gmat * rootGρ
+    Gmat = rootGρ * second_frechet(cone.Δ3_dg_ZGZ, U_GZG, Dmeat1) * rootGρ
+    for i ∈ eachindex(blocks)
+        Dmeat2 = S[blocks[i], :] * Gmat * S'[:, blocks[i]]
+        DZ[i] .+= first_frechet(cone.Δ2_h_Zρ[i], Zρ_U[i], Dmeat2)
+    end
+
+    applykraus_adj!(d3Ψdρ3, Gk, Hermitian(DG), cone.Gρmat)
+    for i ∈ eachindex(blocks)
+        applykraus_adj!(cone.mat3, Zk[i], Hermitian(DZ[i]), cone.Zρmat[i])
+        d3Ψdρ3 .+= cone.mat3
+    end
+    smat_to_svec!(d3Ψdρ3vec, d3Ψdρ3, cone.rt2)
+    return d3Ψdρ3vec
+end
+
+
+
+# ! OLDDD -----------------------------------------
+
+
+
+function d3Ψdρ3_old!(
+    d3Ψdρ3vec::AbstractVector{T},
+    ρ_arr_mat::AbstractMatrix{R},
+    cone::EpiRenyiQKDTri{T,R}
+) where {T<:Real,R<:RealOrComplex{T}}
+
+    d3Ψdρ3 = cone.mat2
+
+    blocks = cone.blocks
+    sqrtGρ = cone.sqrtGρ
+    S = cone.S
+    Gmat = cone.Gmat
+    Gmat2 = cone.Gmat2
+    Gmat3 = cone.Gmat3
+    Gmat4 = cone.Gmat4
     Gmat5 = cone.Gmat5
     Gξ = cone.Gmat6
     Zmat = cone.Zmat
