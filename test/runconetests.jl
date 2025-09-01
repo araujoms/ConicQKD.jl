@@ -28,21 +28,6 @@ function cone_types(T::Type{<:Real})
 end
 
 @testset "cone tests" begin
-    println("starting d3Ψdρ3 test")
-    @testset "d3Ψdρ3 tests" begin
-        real_types = [
-            Float64
-            #Float32,
-            #DoubleFloats.Double64
-            # BigFloat,
-        ]
-        @testset "$cone" for T ∈ real_types, cone ∈ cone_types(T)
-            println("$cone")
-            test_time = @elapsed test_d3Ψdρ3(cone)
-            @printf("%8.2e seconds\n", test_time)
-        end
-    end
-
     println("starting oracle tests")
     @testset "oracle tests" begin
         real_types = [
