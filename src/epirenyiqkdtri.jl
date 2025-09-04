@@ -1121,12 +1121,12 @@ function d3Ψdρ3!(
     for i ∈ eachindex(blocks)
         fill!(Zmat[i], 0)
         @inbounds for k in 1:cone.Zd[i], j in 1:k
-            Δ4_ij = Δ4generic_ij(j, k, Δ3_h_Zρ[i], Zρ_λ[i], d3h.(Zρ_λ[i]))
+            Δ4generic_ij!(cone.Δ4_ij_h_Zρ[i], j, k, Δ3_h_Zρ[i], Zρ_λ[i], d3h.(Zρ_λ[i]))
             for b ∈ 1:cone.Zd[i]
                 for a ∈ 1:cone.Zd[i]
                     cone.temp = 2 * cone.DhZmeat[i][j, b] * UZξU[i][b, a] * UZξU[i][a, k]
                     cone.temp += 2 * UZξU[i][j, b] * (cone.DhZmeat[i][b, a] * UZξU[i][a, k] + UZξU[i][b, a] * cone.DhZmeat[i][a, k])
-                    Zmat[i][j, k] += Δ4_ij[b, a] * cone.temp
+                    Zmat[i][j, k] += cone.Δ4_ij_h_Zρ[i][b, a] * cone.temp
                 end
             end
         end
@@ -1231,7 +1231,6 @@ function d3Ψdρ3!(
         DZ[i] .+= Zmat[i]
     end
 
-
     # * Apply kraus to DZ
 
     for i ∈ eachindex(blocks)
@@ -1267,17 +1266,16 @@ function dder3(cone::EpiRenyiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real
 
     (ρ_λ, ρ_U) = cone.ρ_fact
     spectral_outer!(cone.mat2, ρ_U', Hermitian(ρ_dir_mat), cone.mat3)  # U' ξ U
-    cone.ρ_λ_inv .= sqrt.(ρ_λ)
     @. cone.mat2 /= cone.ρ_λ_inv' #  U' ξ U sqrt(Λ-1)
     ldiv!(Diagonal(ρ_λ), cone.mat2) # Λ-1 U' ξ U sqrt(Λ-1)
     mul!(cone.mat3, cone.mat2, cone.mat2')  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1
     spectral_outer!(cone.mat3, ρ_U, Hermitian(cone.mat3), cone.mat2)  # mat2 = U Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 U'
     smat_to_svec!(dder3_ρ, cone.mat3, rt2)
 
-    @. dder3_ρ += cone.sα * zi * const0 * cone.d2Ψdρ2vec  # * sale el mismo resultado que con lo de abajo
+    @. dder3_ρ += cone.sα * zi * const0 * cone.d2Ψdρ2vec
     @. dder3_ρ -= cone.sα * const1 * cone.dΨdρ
 
-    d3Ψdρ3vec = cone.d2Ψdρ2vec  #reusing variable to save memory
+    d3Ψdρ3vec = cone.d2Ψdρ2vec  # reusing variable to save memory
     d3Ψdρ3!(d3Ψdρ3vec, ρ_dir_mat, cone)
     @. dder3_ρ -= 0.5 * cone.sα * zi * d3Ψdρ3vec
 
