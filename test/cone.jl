@@ -409,7 +409,7 @@ function test_barrier(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
 end
 
 function show_time_alloc(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
-    din, dout = 4, 5
-    G, Z, rho_dim, rho_idxs, blocks = random_protocol(din, dout, R)
-    return show_time_alloc(cone(G, Z, 1 + rho_dim; blocks))
+    din, dout = 3, 4
+    α, gkraus, zkraus, rho_dim, rho_idxs, blocks, S = random_protocol(cone, din, dout)
+    return show_time_alloc(cone(α, gkraus, zkraus, 1 + rho_dim; S, blocks))
 end
