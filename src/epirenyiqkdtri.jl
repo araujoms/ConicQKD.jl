@@ -1262,6 +1262,7 @@ function dder3(cone::EpiRenyiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real
 
     (ρ_λ, ρ_U) = cone.ρ_fact
     spectral_outer!(cone.mat2, ρ_U', Hermitian(ρ_dir_mat), cone.mat3)  # U' ξ U
+    cone.ρ_λ_inv .= sqrt.(ρ_λ)
     @. cone.mat2 /= cone.ρ_λ_inv' #  U' ξ U sqrt(Λ-1)
     ldiv!(Diagonal(ρ_λ), cone.mat2) # Λ-1 U' ξ U sqrt(Λ-1)
     mul!(cone.mat3, cone.mat2, cone.mat2')  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1
