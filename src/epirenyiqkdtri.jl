@@ -72,8 +72,8 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Δ2_h_Zρ::Vector{Matrix{T}}
     Δ3_h_Zρ::Vector{Array{T,3}}
     Δ3_h_ZρW̃::Vector{Array{R,3}}
-    Δ4_ij_h_Zρ::Vector{Matrix{T}}
-    # Δ4_h_Zρ::Vector{Array{T,4}}
+    # Δ4_ij_h_Zρ::Vector{Matrix{T}}
+    Δ4_h_Zρ::Vector{Array{T,4}}
     dΨdρ::Vector{T}
     d2Ψdρ2vec::Vector{T}
     d2Ψdρ2::Matrix{T}
@@ -204,9 +204,9 @@ function setup_extra_data!(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrCo
     cone.Δ3_g̃_ZGZ = zeros(T, Gd, Gd, Gd)
     cone.Δ2_h_Zρ = [zeros(T, s, s) for s ∈ Zd]
     cone.Δ3_h_Zρ = [zeros(T, s, s, s) for s ∈ Zd]
-    # cone.Δ4_h_Zρ = [zeros(T, s, s, s, s) for s ∈ Zd]
     cone.Δ3_h_ZρW̃ = [zeros(R, s, s, s) for s ∈ Zd]
-    cone.Δ4_ij_h_Zρ = [zeros(T, s, s) for s ∈ Zd]
+    cone.Δ4_h_Zρ = [zeros(T, s, s, s, s) for s ∈ Zd]
+    # cone.Δ4_ij_h_Zρ = [zeros(T, s, s) for s ∈ Zd]
     cone.d2Ψdρ2 = zeros(T, ρ_dim, ρ_dim)
     cone.ρ_λ_inv = zeros(T, d)
     cone.Gρ_λ_log = zeros(T, Gd)
@@ -807,16 +807,16 @@ function update_dder3_aux(cone::EpiRenyiQKDTri)
     cone.hess_aux_updated || update_hess_aux(cone)
 
     α = cone.α
-    d3h(x) = (1 / α - 1) * (1 / α - 2) * (1 / α - 3) * x^(1 / α - 4)
     d2g̃(x) = α^2 * (α - 1) * x^(α - 2)
     d3g(x) = α * (α - 1) * (α - 2) * x^(α - 3)
-
-    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
-    # Δ4generic!.(cone.Δ4_h_Zρ, cone.Δ3_h_Zρ, Zρ_λ, [d3h.(v) for v ∈ Zρ_λ])
 
     λ_ZGZ = cone.ZG_fact.S .^ 2  # ZS^½ G ZS^½ = U Λ^2 U'
     Δ3generic!(cone.Δ3_g̃_ZGZ, cone.Δ2_g̃_ZGZ, λ_ZGZ, d2g̃.(λ_ZGZ))  # D^2 g̃
     Δ3generic!(cone.Δ3_dg_ZGZ, cone.Δ2_dg_ZGZ, λ_ZGZ, d3g.(λ_ZGZ))  # D^2 g'
+
+    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
+    d3h(x) = (1 / α - 1) * (1 / α - 2) * (1 / α - 3) * x^(1 / α - 4)
+    Δ4generic!.(cone.Δ4_h_Zρ, cone.Δ3_h_Zρ, Zρ_λ, [d3h.(v) for v ∈ Zρ_λ])
 
     cone.dder3_aux_updated = true
     return
@@ -858,11 +858,7 @@ function d3Ψdρ3!(
     Δ2_h_Zρ = cone.Δ2_h_Zρ
     Δ3_h_Zρ = cone.Δ3_h_Zρ
 
-    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
     Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
-
-    α = cone.α
-    d3h(x) = (1 / α - 1) * (1 / α - 2) * (1 / α - 3) * x^(1 / α - 4)
 
     U_ZGZ = cone.ZG_fact.U
     U_GZG = cone.ZG_fact.V
@@ -1114,15 +1110,20 @@ function d3Ψdρ3!(
     # W = S * rootGρ * dg(GZG) * rootGρ * S'
     # DZZZ = third_frechet(Δ3_h_Zρ, Zρ_λ, d3h.(Zρ_λ), Zρ_U, W, Zξ)
 
+    # α = cone.α
+    # d3h(x) = (1 / α - 1) * (1 / α - 2) * (1 / α - 3) * x^(1 / α - 4)
+    # Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
+    
     for i ∈ eachindex(blocks)
         fill!(Zmat[i], 0)
         @inbounds for k in 1:cone.Zd[i], j in 1:k
-            Δ4generic_ij!(cone.Δ4_ij_h_Zρ[i], j, k, Δ3_h_Zρ[i], Zρ_λ[i], d3h.(Zρ_λ[i]))
+            # Δ4generic_ij!(cone.Δ4_ij_h_Zρ[i], j, k, Δ3_h_Zρ[i], Zρ_λ[i], d3h.(Zρ_λ[i]))
             for b ∈ 1:cone.Zd[i]
                 for a ∈ 1:cone.Zd[i]
                     temp = 2 * cone.DhZmeat[i][j, b] * UZξU[i][b, a] * UZξU[i][a, k]
                     temp += 2 * UZξU[i][j, b] * (cone.DhZmeat[i][b, a] * UZξU[i][a, k] + UZξU[i][b, a] * cone.DhZmeat[i][a, k])
-                    Zmat[i][j, k] += cone.Δ4_ij_h_Zρ[i][b, a] * temp
+                    # Zmat[i][j, k] += cone.Δ4_ij_h_Zρ[i][b, a] * temp
+                    Zmat[i][j, k] += cone.Δ4_h_Zρ[i][j, b, a, k] * temp
                 end
             end
         end

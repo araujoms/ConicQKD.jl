@@ -320,36 +320,38 @@ function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vect
 end
 
 
-function Δ4generic!(Δ4::Array{T, 4}, Δ3::Array{T, 3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
+function Δ4generic!(Δ4::Array{T,4}, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
     rteps = sqrt(eps(T))
     d = length(λ)
 
-    # ! revisar
     @inbounds for l ∈ 1:d, k ∈ 1:l, j ∈ 1:k, i ∈ 1:j
-        λi, λj, λk, λl = λ[i], λ[j], λ[k], λ[l]
+        λ_i, λ_j, λ_k, λ_l = λ[i], λ[j], λ[k], λ[l]
+        λ_ij = λ_i - λ_j
+        λ_ik = λ_i - λ_k
+        λ_il = λ_i - λ_l
+        B_ij = (abs(λ_ij) < rteps)
+        B_ik = (abs(λ_ik) < rteps)
+        B_il = (abs(λ_il) < rteps)
 
-        # Check λi ≈ λl
-        if abs(λi - λl) < rteps
-            # Check λi ≈ λj ≈ λk ≈ λl
-            if abs(λi - λj) < rteps && abs(λj - λk) < rteps
-                t = d3fλ[i] / 6
-            else
-                # Partially repeated nodes
-                t = (Δ3[i, j, k] - Δ3[j, k, l]) / (λi - λj)
-            end
+        if B_ij && B_ik && B_il
+            t = (d3fλ[i] + d3fλ[j] + d3fλ[k] + d3fλ[l]) / 24
+        elseif B_ik && B_il
+            t = (Δ3[i, i, i] - Δ3[i, i, j]) / λ_ij
+        elseif B_il
+            t = (Δ3[i, i, j] - Δ3[i, j, k]) / λ_ik
         else
-            # General case
-            t = (Δ3[i, j, k] - Δ3[j, k, l]) / (λi - λl)
-            Δ4[i, j, k, l] = t
+            t = (Δ3[i, j, k] - Δ3[j, k, l]) / λ_il
         end
 
-        # Store symmetrically in all 4! = 24 permutations
-        for a in (i, j, k, l), b in (i, j, k, l), c in (i, j, k, l), e in (i, j, k, l)
-            if length(Set((a, b, c, e))) == 4  # all indices distinct
-                Δ4[a, b, c, e] = t
-            end
-        end
+        # Assign symmetrically to all permutations of the 4 indices
+        Δ4[i,j,k,l] = Δ4[i,j,l,k] = Δ4[i,k,j,l] = Δ4[i,k,l,j] =
+        Δ4[i,l,j,k] = Δ4[i,l,k,j] = Δ4[j,i,k,l] = Δ4[j,i,l,k] =
+        Δ4[j,k,i,l] = Δ4[j,k,l,i] = Δ4[j,l,i,k] = Δ4[j,l,k,i] =
+        Δ4[k,i,j,l] = Δ4[k,i,l,j] = Δ4[k,j,i,l] = Δ4[k,j,l,i] =
+        Δ4[k,l,i,j] = Δ4[k,l,j,i] = Δ4[l,i,j,k] = Δ4[l,i,k,j] =
+        Δ4[l,j,i,k] = Δ4[l,j,k,i] = Δ4[l,k,i,j] = Δ4[l,k,j,i] = t
     end
+
     return Δ4
 end
 
@@ -376,7 +378,7 @@ function Δ4generic_ij!(
         B_il = (abs(λ_il) < rteps)
 
         if (abs(λ_ij) < rteps) && B_ik && B_il
-            t = d3fλ[i] / 6
+            t = (d3fλ[i] + d3fλ[j] + d3fλ[k] + d3fλ[l]) / 24
         elseif B_ik && B_il
             t = (Δ3[i, i, i] - Δ3[i, i, j]) / λ_ij
         elseif B_il
@@ -626,42 +628,4 @@ function spectral_outer!(
     mul!(temp, symm, vecs')
     mul!(mat, vecs, temp)
     return mat
-end
-
-function first_frechet(Δ2, U, H)
-    return U * (Δ2 .* (U' * H * U)) * U'
-end
-
-function second_frechet(Δ3, U, H1, H2)
-    second_der = zeros(eltype(H1), size(H1))
-    for k in 1:size(Δ3, 3)
-        fk = (U' * (H1 * U[:,k])) * ((U[:,k]' * H2) * U)
-        second_der += Δ3[:,:,k] .* (fk+fk')
-    end
-    return U * second_der * U'
-end
-
-function second_frechet(Δ3, U, H1)
-    return second_frechet(Δ3, U, H1, H1)
-end
-
-function third_frechet(Δ3, λ, d3fλ, U, H1, H2)
-    third_der = zeros(eltype(H1), size(H1))
-
-    H1 = U' * H1 * U
-    H2 = U' * H2 * U
-    for j in 1:size(Δ3, 1)
-        for k in 1:size(Δ3, 1)
-                Δ4_ij = Δ4generic_ij(j, k, Δ3, λ, d3fλ)
-                for b ∈ 1:size(Δ3, 1)
-                    for a ∈ 1:size(Δ3, 1)
-                        temp = 2 * H1[j, b] * H2[b, a] * H2[a, k]
-                        temp += 2 * H2[j, b] * (H1[b, a] * H2[a, k] + H2[b, a] * H1[a, k])
-                        third_der[j, k] += Δ4_ij[b, a] * temp
-                    end
-                end
-        end
-    end
-
-    return U * third_der * U'
 end
