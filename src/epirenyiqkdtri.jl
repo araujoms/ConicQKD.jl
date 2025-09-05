@@ -1,7 +1,6 @@
 mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     α::T
     α2::T
-    temp::R
     sα::Int
     use_dual_barrier::Bool
     dim::Int
@@ -12,7 +11,6 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     is_complex::Bool
     nblocks::Int
     blocks::Vector{UnitRange{Int}}
-
     point::Vector{T}
     dual_point::Vector{T}
     grad::Vector{T}
@@ -131,11 +129,9 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         cone.use_dual_barrier = use_dual
         cone.blocks = blocks
         cone.nblocks = length(blocks)
-
         cone.α = α
         cone.α2 = (1 - α) / 2α
         cone.sα = α < 1 ? -1 : 1
-        cone.temp = 0
         cone.dim = dim
         cone.is_complex = (R <: Complex)
         cone.ρ_dim = dim - 1
@@ -1124,9 +1120,9 @@ function d3Ψdρ3!(
             Δ4generic_ij!(cone.Δ4_ij_h_Zρ[i], j, k, Δ3_h_Zρ[i], Zρ_λ[i], d3h.(Zρ_λ[i]))
             for b ∈ 1:cone.Zd[i]
                 for a ∈ 1:cone.Zd[i]
-                    cone.temp = 2 * cone.DhZmeat[i][j, b] * UZξU[i][b, a] * UZξU[i][a, k]
-                    cone.temp += 2 * UZξU[i][j, b] * (cone.DhZmeat[i][b, a] * UZξU[i][a, k] + UZξU[i][b, a] * cone.DhZmeat[i][a, k])
-                    Zmat[i][j, k] += cone.Δ4_ij_h_Zρ[i][b, a] * cone.temp
+                    temp = 2 * cone.DhZmeat[i][j, b] * UZξU[i][b, a] * UZξU[i][a, k]
+                    temp += 2 * UZξU[i][j, b] * (cone.DhZmeat[i][b, a] * UZξU[i][a, k] + UZξU[i][b, a] * cone.DhZmeat[i][a, k])
+                    Zmat[i][j, k] += cone.Δ4_ij_h_Zρ[i][b, a] * temp
                 end
             end
         end
