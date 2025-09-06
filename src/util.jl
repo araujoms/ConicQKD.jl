@@ -21,6 +21,8 @@ function skron(X)
     return result
 end
 
+_numerical_type(::Type{T}) where {T} = T
+
 """
     svec(M::AbstractMatrix)
 
@@ -28,7 +30,7 @@ Produces the scaled vectorized version of a Hermitian matrix `M`. The transforma
 """
 function svec(M::AbstractMatrix{T}) where {T}#the weird stuff here is to make it work with JuMP variables
     d = size(M, 1)
-    numericalT = JuMP.value_type(T)
+    numericalT = _numerical_type(T)
     vec_dim = Cones.svec_length(numericalT, d)
     v = Vector{real(T)}(undef, vec_dim)
     root2 = sqrt(real(numericalT(2)))
@@ -52,7 +54,7 @@ function smat(v::AbstractVector{T}) where {T} #the weird stuff here is to make i
     d = is_complex ? Cones.svec_side(Complex, n) : Cones.svec_side(Real, n)
     mtype = is_complex ? promote_type(eltype(v), Complex{Int}) : real(eltype(v))
     M = Matrix{mtype}(undef, d, d)
-    numericalT = JuMP.value_type(T)
+    numericalT = _numerical_type(T)
     root2 = sqrt(real(numericalT(2)))
     if !is_complex
         Cones.svec_to_smat!(M, 1 * v, root2)

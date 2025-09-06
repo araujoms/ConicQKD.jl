@@ -11,7 +11,6 @@ tests for primitive cone barrier oracles
 
 using Test
 import Random
-import Random.randn
 using LinearAlgebra
 import ForwardDiff
 import GenericLinearAlgebra.eigen # needed by ForwardDiff currently for test_barrier
@@ -26,12 +25,6 @@ import ConicQKD.kraus2matrix
 import ConicQKD.skron
 import ConicQKD.svec
 import ConicQKD.smat
-
-Random.randn(::Type{BigFloat}, dims::Integer...) = BigFloat.(randn(dims...))
-
-function Random.randn(::Type{Complex{BigFloat}}, dims::Integer...)
-    return Complex{BigFloat}.(randn(ComplexF64, dims...))
-end
 
 function random_state(::Type{T}, d::Integer, k::Integer = d) where {T}
     Random.seed!(1)
