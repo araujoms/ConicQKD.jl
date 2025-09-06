@@ -376,6 +376,8 @@ function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDT
     ρ_idxs = cone.ρ_idxs
     dzdρ = cone.dzdρ
     ρ_arr_mat = cone.mat
+    (ρ_λ, ρ_U) = cone.ρ_fact
+
     zi = inv(cone.z)
 
     # For each vector ξ do:
@@ -394,7 +396,10 @@ function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiQKDT
         @. ρ_prod -= zi * cone.d2zdρ2vec
 
         # Hessian of log(det(ρ))
-        spectral_outer!(cone.mat3, cone.ρ_inv, Hermitian(ρ_arr_mat), cone.mat2)  # ρ^-1 ξ ρ^-1
+        spectral_outer!(cone.mat3, ρ_U', Hermitian(ρ_arr_mat), cone.mat2)  # U' ξ U
+        ldiv!(Diagonal(ρ_λ), cone.mat3)  # Λ^-1 U' ξ U
+        rdiv!(cone.mat3, Diagonal(ρ_λ))  # Λ^-1 U' ξ U Λ^-1
+        spectral_outer!(cone.mat3, ρ_U, Hermitian(cone.mat3), cone.mat2)  # U Λ^-1 U' ξ U Λ^-1 U'
         ρ_prod .+= smat_to_svec!(cone.vec, cone.mat3, cone.rt2)
     end
 
@@ -580,13 +585,14 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
 
     # ρ
     spectral_outer!(cone.mat2, ρ_U', Hermitian(ρ_dir_mat), cone.mat3)  # U' ξ U
-    cone.ρ_λ_inv .= sqrt.(ρ_λ)
-    @. cone.mat2 /= cone.ρ_λ_inv' #  U' ξ U sqrt(Λ-1)
+    tempvec = cone.ρ_λ_inv
+    tempvec .= sqrt.(ρ_λ)
+    @. cone.mat2 /= tempvec' #  U' ξ U sqrt(Λ-1)
     ldiv!(Diagonal(ρ_λ), cone.mat2) # Λ-1 U' ξ U sqrt(Λ-1)
-    mul!(cone.mat3, cone.mat2, cone.mat2')  # Λ-1 U' ξ U Λ-1 U' ξ U Λ-1
-    spectral_outer!(cone.mat3, ρ_U, Hermitian(cone.mat3), cone.mat2)  # mat2 = U Λ-1 U' ξ U Λ-1 U' ξ U Λ-1 U'
+    mul!(cone.mat3, ρ_U, cone.mat2) # ρ-1 ξ U sqrt(Λ-1)
+    mul!(cone.mat2, cone.mat3, cone.mat3')  # ρ-1 ξ ρ-1 ξ ρ-1
     @views dder3_ρ = dder3[cone.ρ_idxs]
-    smat_to_svec!(dder3_ρ, cone.mat3, rt2)
+    smat_to_svec!(dder3_ρ, cone.mat2, rt2)
     @. dder3_ρ -= const0 * d2zdρ2vec * zi  # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2 - zi^2 * (ξ[1] + ∇ρz⋅ξ[ρ]) * d2zdρ2
 
     d3zdρ3 = d2zdρ2vec #reusing variable to save memory
