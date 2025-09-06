@@ -76,7 +76,7 @@ function hae_mub(
     v::T,
     d::Integer,
     n::Integer = d + 1,
-    α::T = T(9) / 10;
+    α::T = T(11) / 10;
     analytical_mub::Bool = true,
     renyi::Bool = false
 ) where {T<:AbstractFloat}

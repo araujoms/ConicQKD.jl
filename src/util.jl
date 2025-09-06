@@ -319,6 +319,82 @@ function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vect
     return Δ3
 end
 
+
+function Δ4generic!(Δ4::Array{T,4}, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
+    rteps = sqrt(eps(T))
+    d = length(λ)
+
+    @inbounds for l ∈ 1:d, k ∈ 1:l, j ∈ 1:k, i ∈ 1:j
+        λ_i, λ_j, λ_k, λ_l = λ[i], λ[j], λ[k], λ[l]
+        λ_ij = λ_i - λ_j
+        λ_ik = λ_i - λ_k
+        λ_il = λ_i - λ_l
+        B_ij = (abs(λ_ij) < rteps)
+        B_ik = (abs(λ_ik) < rteps)
+        B_il = (abs(λ_il) < rteps)
+
+        if B_ij && B_ik && B_il
+            t = (d3fλ[i] + d3fλ[j] + d3fλ[k] + d3fλ[l]) / 24
+        elseif B_ik && B_il
+            t = (Δ3[i, i, i] - Δ3[i, i, j]) / λ_ij
+        elseif B_il
+            t = (Δ3[i, i, j] - Δ3[i, j, k]) / λ_ik
+        else
+            t = (Δ3[i, j, k] - Δ3[j, k, l]) / λ_il
+        end
+
+        # Assign symmetrically to all permutations of the 4 indices
+        Δ4[i,j,k,l] = Δ4[i,j,l,k] = Δ4[i,k,j,l] = Δ4[i,k,l,j] =
+        Δ4[i,l,j,k] = Δ4[i,l,k,j] = Δ4[j,i,k,l] = Δ4[j,i,l,k] =
+        Δ4[j,k,i,l] = Δ4[j,k,l,i] = Δ4[j,l,i,k] = Δ4[j,l,k,i] =
+        Δ4[k,i,j,l] = Δ4[k,i,l,j] = Δ4[k,j,i,l] = Δ4[k,j,l,i] =
+        Δ4[k,l,i,j] = Δ4[k,l,j,i] = Δ4[l,i,j,k] = Δ4[l,i,k,j] =
+        Δ4[l,j,i,k] = Δ4[l,j,k,i] = Δ4[l,k,i,j] = Δ4[l,k,j,i] = t
+    end
+
+    return Δ4
+end
+
+function Δ4generic_ij!(
+    Δ4_ij::Matrix{T},
+    i::Int,
+    j::Int,
+    Δ3::Array{T, 3},
+    λ::Vector{T},
+    d3fλ::Vector{T}
+) where {T <: Real}
+    rteps = sqrt(eps(T))
+    d = length(λ)
+    λ_i = λ[i]
+    λ_j = λ[j]
+
+    @inbounds for l in 1:d, k in 1:l
+        λ_k = λ[k]
+        λ_l = λ[l]
+        λ_ij = λ_i - λ_j
+        λ_ik = λ_i - λ_k
+        λ_il = λ_i - λ_l
+        B_ik = (abs(λ_ik) < rteps)
+        B_il = (abs(λ_il) < rteps)
+
+        if (abs(λ_ij) < rteps) && B_ik && B_il
+            t = (d3fλ[i] + d3fλ[j] + d3fλ[k] + d3fλ[l]) / 24
+        elseif B_ik && B_il
+            t = (Δ3[i, i, i] - Δ3[i, i, j]) / λ_ij
+        elseif B_il
+            t = (Δ3[i, i, j] - Δ3[i, j, k]) / λ_ik
+        else
+            t = (Δ3[i, j, k] - Δ3[j, k, l]) / λ_il
+        end
+
+        Δ4_ij[k, l] = t
+        Δ4_ij[l, k] = t
+    end
+
+    return Δ4_ij
+end
+
+
 if VERSION.minor == 12
     import LinearAlgebra.generic_matmatmul_wrapper!
     import LinearAlgebra:
@@ -444,6 +520,18 @@ function Δ3generic(Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vector{T}) where {T<:R
     d = length(λ)
     Δ3 = Array{T,3}(undef, d, d, d)
     return Δ3generic!(Δ3, Δ2, λ, d2fλ)
+end
+
+function Δ4generic(Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
+    d = length(λ)
+    Δ4 = Array{T,4}(undef, d, d, d, d)
+    return Δ4generic!(Δ4, Δ3, λ, d3fλ)
+end
+
+function Δ4generic_ij(i, j, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
+    d = length(λ)
+    Δ4_ij = Matrix{T}(undef, d, d)
+    return Δ4generic_ij!(Δ4_ij, i, j, Δ3, λ, d3fλ)
 end
 
 function d_spectral(Δ2::Matrix{T}, K::Matrix{R}) where {T<:Real,R<:RealOrComplex{T}}

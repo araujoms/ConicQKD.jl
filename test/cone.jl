@@ -13,7 +13,6 @@ using Test
 import Random
 import Random.randn
 using LinearAlgebra
-import BlockDiagonals
 import ForwardDiff
 import GenericLinearAlgebra.eigen # needed by ForwardDiff currently for test_barrier
 import Hypatia
@@ -267,19 +266,25 @@ function von_neumann_entropy(rho)
     return -dot(λ, log.(λ))
 end
 
-function renyi1(ρ::Hermitian, σ::Hermitian, α::T, S) where {T<:Real}
-    αexp = (1 - α) / (2 * α)
-    λ, U = eigen(σ)
-    λ = map(x -> x <= 0 ? T(0) : x^αexp, λ)
-    σpower = U * Diagonal(λ) * U' * S
-    λ = eigvals(Hermitian(σpower * ρ * σpower'))
-    λ = max.(T(0), λ)
-    return sum(λ .^ α)
-end
-
-function renyi2(ρ, σ, α, S)
+function renyi(ρ, σ, α, S)
     αexp = (1 - α) / 2α
     ZG = σ^αexp * S * sqrt(ρ)
+    λ = svdvals(ZG)
+    return sum(λ .^ 2α)
+end
+
+function renyi_blocks(ρ, σ::Vector{<:AbstractMatrix}, α, S)
+    αexp = (1 - α) / 2α
+    σpower = σ .^ αexp
+    sizes = size.(σ, 1)
+    Ssqrtρ = S * sqrt(ρ)
+    ZG = zeros(eltype(ρ), sum(sizes), size(Ssqrtρ, 2))
+    c = 0
+    for σi ∈ σpower
+        idxs = 1+c:size(σi, 1)+c
+        ZG[idxs, :] .= σi * Ssqrtρ[idxs, :]
+        c += size(σi, 1)
+    end
     λ = svdvals(ZG)
     return sum(λ .^ 2α)
 end
@@ -356,8 +361,7 @@ function random_point!(point, cone::EpiRenyiQKDTri{T,R}) where {T,R}
     Grho = smat(cone.G * svec(rho))
     S = cone.S
     Zrhoblocks = smat.(cone.Z .* Ref(svec(rho)))
-    Zrho = Hermitian(Matrix(BlockDiagonals.BlockDiagonal(Zrhoblocks)))
-    r = renyi2(Grho, Zrho, cone.α, S)
+    r = renyi_blocks(Grho, Zrhoblocks, cone.α, S)
     point[1] = cone.sα * r + 0.1
     point[2:end] .= svec(rho)
 end
@@ -398,14 +402,14 @@ function test_barrier(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
         rhoH = smat(point[rho_idxs])
         GrhoH = smat(G * point[rho_idxs])
         ZrhoH = smat(Z * point[rho_idxs])
-        r = renyi2(GrhoH, ZrhoH, α, S)
+        r = renyi(GrhoH, ZrhoH, α, S)
         return -real(log(u - sα * r)) - logdet_pd(rhoH)
     end
     return test_barrier(cone(α, gkraus, zkraus, 1 + rho_dim; S, blocks), barrier; TFD = Float64)
 end
 
 function show_time_alloc(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
-    din, dout = 4, 5
-    G, Z, rho_dim, rho_idxs, blocks = random_protocol(din, dout, R)
-    return show_time_alloc(cone(G, Z, 1 + rho_dim; blocks))
+    din, dout = 3, 4
+    α, gkraus, zkraus, rho_dim, rho_idxs, blocks, S = random_protocol(cone, din, dout)
+    return show_time_alloc(cone(α, gkraus, zkraus, 1 + rho_dim; S, blocks))
 end
