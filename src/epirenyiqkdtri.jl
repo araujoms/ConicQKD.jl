@@ -72,8 +72,7 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Δ2_h_Zρ::Vector{Matrix{T}}
     Δ3_h_Zρ::Vector{Array{T,3}}
     Δ3_h_ZρW̃::Vector{Array{R,3}}
-    # Δ4_ij_h_Zρ::Vector{Matrix{T}}
-    Δ4_h_Zρ::Vector{Array{T,4}}
+    Δ4_ij_h_Zρ::Vector{Matrix{T}}
     dΨdρ::Vector{T}
     d2Ψdρ2vec::Vector{T}
     d2Ψdρ2::Matrix{T}
@@ -205,8 +204,7 @@ function setup_extra_data!(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrCo
     cone.Δ2_h_Zρ = [zeros(T, s, s) for s ∈ Zd]
     cone.Δ3_h_Zρ = [zeros(T, s, s, s) for s ∈ Zd]
     cone.Δ3_h_ZρW̃ = [zeros(R, s, s, s) for s ∈ Zd]
-    cone.Δ4_h_Zρ = [zeros(T, s, s, s, s) for s ∈ Zd]
-    # cone.Δ4_ij_h_Zρ = [zeros(T, s, s) for s ∈ Zd]
+    cone.Δ4_ij_h_Zρ = [zeros(T, s, s) for s ∈ Zd]
     cone.d2Ψdρ2 = zeros(T, ρ_dim, ρ_dim)
     cone.ρ_λ_inv = zeros(T, d)
     cone.Gρ_λ_log = zeros(T, Gd)
@@ -814,10 +812,6 @@ function update_dder3_aux(cone::EpiRenyiQKDTri)
     Δ3generic!(cone.Δ3_g̃_ZGZ, cone.Δ2_g̃_ZGZ, λ_ZGZ, d2g̃.(λ_ZGZ))  # D^2 g̃
     Δ3generic!(cone.Δ3_dg_ZGZ, cone.Δ2_dg_ZGZ, λ_ZGZ, d3g.(λ_ZGZ))  # D^2 g'
 
-    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
-    d3h(x) = (1 / α - 1) * (1 / α - 2) * (1 / α - 3) * x^(1 / α - 4)
-    Δ4generic!.(cone.Δ4_h_Zρ, cone.Δ3_h_Zρ, Zρ_λ, [d3h.(v) for v ∈ Zρ_λ])
-
     cone.dder3_aux_updated = true
     return
 end
@@ -993,7 +987,7 @@ function d3Ψdρ3!(
     mul!(Gmat3, cone.invsqrtGρ, U_GZG)
     spectral_outer!(Gmat2, Gmat3, Hermitian(Gmat2), Gmat)  # G^(-½) Dg̃(G^½ ZS G^½)[G^½ S' D^2h[Z(ξ), Z(ξ)] S G^½] G^(-½)
     DG .+= Gmat2
-  
+
     # * GZZ (2nd term)
 
     # Dmeat1 = rootGρ * S' * first_frechet(Δ2_h_Zρ, Zρ_U, Zξ) * S * rootGρ
@@ -1037,7 +1031,7 @@ function d3Ψdρ3!(
 
 
     # * ZGZ (1st term)
-    
+
     # invGHg = invrootGρ * Gξ * invrootGρ
     # Dmeat1 = S * rootGρ * first_frechet(Δ2_g̃_GZG, U_GZG, invGHg) * rootGρ * S'
     # DZGZ = second_frechet(Δ3_h_Zρ, Zρ_U, Zξ, Dmeat1)
@@ -1091,7 +1085,7 @@ function d3Ψdρ3!(
     else
         # Gmat3 = G^½ V
         spectral_outer!(Gmat, Gmat3, Hermitian(Gmat), Gmat2)  # G^½ D^2g̃ G^½
-    end 
+    end
 
     for i ∈ eachindex(blocks)
         if cone.is_S_identity
@@ -1105,25 +1099,24 @@ function d3Ψdρ3!(
         DZ[i] .+= 2 * Zmat2[i]
     end
 
-    # * ZZZ 1st term 
+    # * ZZZ 1st term
 
     # W = S * rootGρ * dg(GZG) * rootGρ * S'
     # DZZZ = third_frechet(Δ3_h_Zρ, Zρ_λ, d3h.(Zρ_λ), Zρ_U, W, Zξ)
 
-    # α = cone.α
-    # d3h(x) = (1 / α - 1) * (1 / α - 2) * (1 / α - 3) * x^(1 / α - 4)
-    # Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
-    
+    α = cone.α
+    d3h(x) = (1 / α - 1) * (1 / α - 2) * (1 / α - 3) * x^(1 / α - 4)
+    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
+
     for i ∈ eachindex(blocks)
         fill!(Zmat[i], 0)
         @inbounds for k in 1:cone.Zd[i], j in 1:k
-            # Δ4generic_ij!(cone.Δ4_ij_h_Zρ[i], j, k, Δ3_h_Zρ[i], Zρ_λ[i], d3h.(Zρ_λ[i]))
+            Δ4generic_ij!(cone.Δ4_ij_h_Zρ[i], j, k, Δ3_h_Zρ[i], Zρ_λ[i], d3h.(Zρ_λ[i]))
             for b ∈ 1:cone.Zd[i]
                 for a ∈ 1:cone.Zd[i]
                     temp = 2 * cone.DhZmeat[i][j, b] * UZξU[i][b, a] * UZξU[i][a, k]
                     temp += 2 * UZξU[i][j, b] * (cone.DhZmeat[i][b, a] * UZξU[i][a, k] + UZξU[i][b, a] * cone.DhZmeat[i][a, k])
-                    # Zmat[i][j, k] += cone.Δ4_ij_h_Zρ[i][b, a] * temp
-                    Zmat[i][j, k] += cone.Δ4_h_Zρ[i][j, b, a, k] * temp
+                    Zmat[i][j, k] += cone.Δ4_ij_h_Zρ[i][b, a] * temp
                 end
             end
         end
@@ -1136,7 +1129,7 @@ function d3Ψdρ3!(
     # Dmeat1 = sqrtGρ * S' * first_frechet(Δ2_h_Zρ, Zρ_U, Zξ) * S * sqrtGρ
     # Dmeat2 = S * sqrtGρ * first_frechet(Δ2_dg_GZG, U_GZG, Dmeat1) * sqrtGρ * S'
     # DZZZ .+= 2 * second_frechet(Δ3_h_Zρ, Zρ_U, Dmeat2, Zξ)
-    
+
     # Gmat5 = V' G^½ S' Dh(Z)[Z(ξ)] S G^½ V
     Gmat .= cone.Δ2_dg_ZGZ .* Gmat5
 
@@ -1145,7 +1138,7 @@ function d3Ψdρ3!(
     else
         # Gmat3 = G^½ V
         spectral_outer!(Gmat, Gmat3, Hermitian(Gmat), Gmat2)  # G^½ D^2g̃ G^½
-    end 
+    end
 
     for i ∈ eachindex(blocks)
         # ZGmat = U_z' * S
@@ -1178,7 +1171,7 @@ function d3Ψdρ3!(
     else
         # Gmat3 = G^½ V
         spectral_outer!(Gmat, Gmat3, Hermitian(Gmat), Gmat2)  # G^½ D^2g̃ G^½
-    end 
+    end
     for i ∈ eachindex(blocks)
         # ZGmat = U_z' * S
         spectral_outer!(Zmat[i], ZGmat[i], Hermitian(Gmat), ZGmat2[i])
@@ -1213,7 +1206,7 @@ function d3Ψdρ3!(
     end
 
     Gmat2 .= cone.Δ2_dg_ZGZ .* Gmat  # Gmat5 = g'[1]⊙(V' G^½ S' U_z (h[2] ⊙ U_z' Z(ξ) U_z) U_z' S G^½ V')
-    
+
     if cone.is_S_identity
         spectral_outer!(Gmat2, U_GZG, Hermitian(Gmat2), Gmat)
     else
