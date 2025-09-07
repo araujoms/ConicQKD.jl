@@ -1,6 +1,5 @@
 mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     α::T
-    α2::T
     sα::Int
     use_dual_barrier::Bool
     dim::Int
@@ -52,7 +51,6 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Z::Vector{Matrix{T}}
     Gk::Vector{Matrix{R}}
     Zk::Vector{Vector{Matrix{R}}}
-    Zkbig::Vector{Matrix{R}}
     Gadj::Matrix{T}
     Zadj::Vector{Matrix{T}}
     ρ_fact::Eigen{R,T,Matrix{R},Vector{T}}
@@ -129,7 +127,6 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         cone.blocks = blocks
         cone.nblocks = length(blocks)
         cone.α = α
-        cone.α2 = (1 - α) / 2α
         cone.sα = α < 1 ? -1 : 1
         cone.dim = dim
         cone.is_complex = (R <: Complex)
@@ -144,7 +141,6 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         Gkraus = [R.(Gk) for Gk ∈ Gkraus]
         Zkraus = [R.(Zk) for Zk ∈ Zkraus]
         cone.Gk = Gkraus
-        cone.Zkbig = Zkraus
         cone.Zk = [filter!(!iszero, [Zk[blocks[i], :] for Zk ∈ Zkraus]) for i ∈ 1:cone.nblocks]
         cone.is_G_identity = (cone.Gk == [I(cone.d)])
         cone.is_S_identity = (S == I)
