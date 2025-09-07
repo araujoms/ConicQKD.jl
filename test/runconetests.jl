@@ -13,7 +13,7 @@ using Test
 using Printf
 import Hypatia.Cones
 import ConicQKD
-import DoubleFloats
+import DoubleFloats.Double64
 include(joinpath(@__DIR__, "cone.jl"))
 
 function cone_types(T::Type{<:Real})
@@ -31,10 +31,8 @@ end
     println("starting oracle tests")
     @testset "oracle tests" begin
         real_types = [
-            Float64
-            #Float32,
-            #DoubleFloats.Double64
-            # BigFloat,
+            Float64,
+            Double64
         ]
         @testset "$cone" for T ∈ real_types, cone ∈ cone_types(T)
             println("$cone")
@@ -47,8 +45,6 @@ end
     @testset "barrier tests" begin
         real_types = [
             Float64
-            # Float32,
-            # BigFloat,
         ]
         @testset "$cone" for T ∈ real_types, cone ∈ cone_types(T)
             println("$cone")
@@ -61,8 +57,6 @@ end
     #    @testset "allocation tests" begin
     #        real_types = [
     #            Float64
-    #            # Float32,
-    #            # BigFloat,
     #        ]
     #        @testset "$cone" for T in real_types, cone in cone_types(T)
     #            println("\n$cone")
