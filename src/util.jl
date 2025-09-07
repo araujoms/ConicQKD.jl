@@ -321,7 +321,6 @@ function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vect
     return Δ3
 end
 
-
 function Δ4generic!(Δ4::Array{T,4}, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
     rteps = sqrt(eps(T))
     d = length(λ)
@@ -346,31 +345,26 @@ function Δ4generic!(Δ4::Array{T,4}, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vec
         end
 
         # Assign symmetrically to all permutations of the 4 indices
+        #! format: off
         Δ4[i,j,k,l] = Δ4[i,j,l,k] = Δ4[i,k,j,l] = Δ4[i,k,l,j] =
         Δ4[i,l,j,k] = Δ4[i,l,k,j] = Δ4[j,i,k,l] = Δ4[j,i,l,k] =
         Δ4[j,k,i,l] = Δ4[j,k,l,i] = Δ4[j,l,i,k] = Δ4[j,l,k,i] =
         Δ4[k,i,j,l] = Δ4[k,i,l,j] = Δ4[k,j,i,l] = Δ4[k,j,l,i] =
         Δ4[k,l,i,j] = Δ4[k,l,j,i] = Δ4[l,i,j,k] = Δ4[l,i,k,j] =
         Δ4[l,j,i,k] = Δ4[l,j,k,i] = Δ4[l,k,i,j] = Δ4[l,k,j,i] = t
+        #! format: on
     end
 
     return Δ4
 end
 
-function Δ4generic_ij!(
-    Δ4_ij::Matrix{T},
-    i::Int,
-    j::Int,
-    Δ3::Array{T, 3},
-    λ::Vector{T},
-    d3fλ::Vector{T}
-) where {T <: Real}
+function Δ4generic_ij!(Δ4_ij::Matrix{T}, i::Int, j::Int, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
     rteps = sqrt(eps(T))
     d = length(λ)
     λ_i = λ[i]
     λ_j = λ[j]
 
-    @inbounds for l in 1:d, k in 1:l
+    @inbounds for l ∈ 1:d, k ∈ 1:l
         λ_k = λ[k]
         λ_l = λ[l]
         λ_ij = λ_i - λ_j
@@ -395,7 +389,6 @@ function Δ4generic_ij!(
 
     return Δ4_ij
 end
-
 
 if VERSION.minor == 12
     import LinearAlgebra.generic_matmatmul_wrapper!

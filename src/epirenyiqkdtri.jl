@@ -821,7 +821,6 @@ function d3Ψdρ3!(
     ρ_arr_mat::AbstractMatrix{R},
     cone::EpiRenyiQKDTri{T,R}
 ) where {T<:Real,R<:RealOrComplex{T}}
-
     d3Ψdρ3 = cone.mat2
 
     blocks = cone.blocks
@@ -922,7 +921,6 @@ function d3Ψdρ3!(
     spectral_outer!(Gmat2, Gmat3, Hermitian(Gmat2), Gmat)
     DG .+= 2 * Gmat2  # * GGZ + GZG terms
 
-
     # * ZGG term
 
     # second_der = second_frechet(Δ3_g̃_ZGZ, U_ZGZ, ZS_Gξ)
@@ -965,7 +963,7 @@ function d3Ψdρ3!(
     for i ∈ eachindex(blocks)
         @inbounds @views for k ∈ 1:cone.Zd[i]
             for j ∈ 1:k
-                Zmat[i][j,k] = 2 * dot(UZξU[i][:, j], Diagonal(Δ3_h_Zρ[i][:, j, k]), UZξU[i][:, k])
+                Zmat[i][j, k] = 2 * dot(UZξU[i][:, j], Diagonal(Δ3_h_Zρ[i][:, j, k]), UZξU[i][:, k])
             end
         end
         if cone.is_S_identity
@@ -1028,7 +1026,6 @@ function d3Ψdρ3!(
     else
         applykraus_adj!(d3Ψdρ3, Gk, Hermitian(DG), cone.Gρmat)
     end
-
 
     # * ZGZ (1st term)
 
@@ -1110,12 +1107,15 @@ function d3Ψdρ3!(
 
     for i ∈ eachindex(blocks)
         fill!(Zmat[i], 0)
-        @inbounds for k in 1:cone.Zd[i], j in 1:k
+        @inbounds for k ∈ 1:cone.Zd[i], j ∈ 1:k
             Δ4generic_ij!(cone.Δ4_ij_h_Zρ[i], j, k, Δ3_h_Zρ[i], Zρ_λ[i], d3h.(Zρ_λ[i]))
             for b ∈ 1:cone.Zd[i]
                 for a ∈ 1:cone.Zd[i]
                     temp = 2 * cone.DhZmeat[i][j, b] * UZξU[i][b, a] * UZξU[i][a, k]
-                    temp += 2 * UZξU[i][j, b] * (cone.DhZmeat[i][b, a] * UZξU[i][a, k] + UZξU[i][b, a] * cone.DhZmeat[i][a, k])
+                    temp +=
+                        2 *
+                        UZξU[i][j, b] *
+                        (cone.DhZmeat[i][b, a] * UZξU[i][a, k] + UZξU[i][b, a] * cone.DhZmeat[i][a, k])
                     Zmat[i][j, k] += cone.Δ4_ij_h_Zρ[i][b, a] * temp
                 end
             end
@@ -1232,7 +1232,6 @@ function d3Ψdρ3!(
 end
 
 function dder3(cone::EpiRenyiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:RealOrComplex{T}}
-
     cone.dder3_aux_updated || update_dder3_aux(cone)
 
     dder3 = cone.dder3

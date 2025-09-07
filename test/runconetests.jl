@@ -43,9 +43,7 @@ end
 
     println("\nstarting barrier tests")
     @testset "barrier tests" begin
-        real_types = [
-            Float64
-        ]
+        real_types = [Float64]
         @testset "$cone" for T ∈ real_types, cone ∈ cone_types(T)
             println("$cone")
             test_time = @elapsed test_barrier(cone)
