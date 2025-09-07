@@ -207,7 +207,7 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiQKDTri{T,R}) where 
         cone.Zρ_λ_log[i] .= log.(Zρ_λ[i])
     end
     relative_entropy = dot(Gρ_λ, cone.Gρ_λ_log) - sum(dot.(Zρ_λ, cone.Zρ_λ_log))
-    arr[1] = T(0.5) * (relative_entropy + sqrt(4 + relative_entropy^2))
+    arr[1] = (relative_entropy + sqrt(4 + relative_entropy^2)) / 2
     return arr
 end
 
@@ -578,7 +578,7 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     d2zdρ2!(d2zdρ2vec, ρ_dir_mat, cone) # ∇ρρ(u) * (:, ξ[ρ])
 
     const0 = zi * (dir[1] + dot(ρ_dir, cone.dzdρ))  # ξ[1] * zi + ∇ρz⋅ξ[ρ]
-    const1 = zi * (abs2(const0) - zi * dot(ρ_dir, d2zdρ2vec) * 0.5)  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
+    const1 = zi * (abs2(const0) - zi * dot(ρ_dir, d2zdρ2vec) / 2)  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
 
     # u
     dder3[1] = const1  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
@@ -598,8 +598,8 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
     d3zdρ3 = d2zdρ2vec #reusing variable to save memory
     d3zdρ3!(d3zdρ3, ρ_dir_mat, cone)
 
-    @. dder3_ρ += zi * d3zdρ3 * T(0.5) # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2
+    @. dder3_ρ += (zi / 2) * d3zdρ3 # U Λ-1 ξ U Λ-1 U' ξ U Λ-1 U' + d3zdρ3 * zi / 2
     @. dder3_ρ += const1 * cone.dzdρ  # += zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) * dzdρ - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2 * dzdρ
 
-    return dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
+    return dder3  # -∇^3 barrier[ξ,ξ] / 2
 end

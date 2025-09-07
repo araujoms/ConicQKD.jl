@@ -259,7 +259,7 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiRenyiQKDTri{T,R}) w
 
     h(x) = x^((1 - cone.α) / cone.α)
 
-    γ = sqrt(T(d + 3) / (2d + 2) - 0.5 * cone.sα * sqrt(1 + T(4) / (d + 1)^2))
+    γ = sqrt(T(d + 3) / (2d + 2) - cone.sα * sqrt(1 + T(4) / (d + 1)^2) / 2)
 
     incr = (cone.is_complex ? 2 : 1)
     arr .= 0
@@ -306,11 +306,11 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiRenyiQKDTri{T,R}) w
     mul!(cone.ZG, cone.sqrtShZρ, cone.sqrtGρ)
     renyi = mapreduce(x -> x^(2 * cone.α), +, svdvals(cone.ZG))
 
-    arr[1] = 0.5 * (cone.sα * renyi + sqrt(4 + renyi^2))
+    arr[1] = (cone.sα * renyi + sqrt(4 + renyi^2)) / 2
     return arr
 end
 
-function update_feas(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
+function update_feas(cone::EpiRenyiQKDTri)
     @assert !cone.feas_updated
     @views ρ_vec = cone.point[cone.ρ_idxs]
     blocks = cone.blocks
@@ -383,7 +383,7 @@ function update_feas(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{
     return cone.is_feas
 end
 
-function update_grad(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
+function update_grad(cone::EpiRenyiQKDTri)
     @assert cone.is_feas
     blocks = cone.blocks
 
@@ -1246,7 +1246,7 @@ function dder3(cone::EpiRenyiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real
     d2Ψdρ2!(cone.d2Ψdρ2vec, ρ_dir_mat, cone) # ∇ρρ(u) * (:, ξ[ρ])
 
     const0 = zi * (dir[1] - cone.sα * dot(ρ_dir, cone.dΨdρ))  #  zi * ξ[1] - sα * zi * ∇ρΨ⋅ξ[ρ]
-    const1 = zi * (abs2(const0) + zi * cone.sα * 0.5 * dot(ρ_dir, cone.d2Ψdρ2vec))  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
+    const1 = zi * (abs2(const0) + zi * cone.sα * dot(ρ_dir, cone.d2Ψdρ2vec) / 2)  # zi^3 * (ξ[1]^2 + (∇ρz⋅ξ[ρ])^2 + 2 * ξ[1] * ∇ρz⋅ξ[ρ]) - zi^2 * ∇2ρρ(z)⋅ξ[ρ]/2
 
     # h component of dder3
     dder3[1] = const1
@@ -1269,7 +1269,7 @@ function dder3(cone::EpiRenyiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real
 
     d3Ψdρ3vec = cone.d2Ψdρ2vec  # reusing variable to save memory
     d3Ψdρ3!(d3Ψdρ3vec, ρ_dir_mat, cone)
-    @. dder3_ρ -= 0.5 * cone.sα * zi * d3Ψdρ3vec
+    @. dder3_ρ -= cone.sα * (zi / 2) * d3Ψdρ3vec
 
-    return dder3  # - 0.5 * ∇^3 barrier[ξ,ξ]
+    return dder3  # -∇^3 barrier[ξ,ξ] / 2
 end
