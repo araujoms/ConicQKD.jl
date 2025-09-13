@@ -106,7 +106,7 @@ function hae_mub(
     @objective(model, Min, h)
     if renyi
         β = inv(α)
-        @constraint(model, [h; ρ_vec] in EpiRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+        @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
     else
         @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhat, 1 + vec_dim; blocks))
     end

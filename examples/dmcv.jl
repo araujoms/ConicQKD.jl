@@ -195,7 +195,7 @@ function hbe_dmcv_general(
     @objective(model, Min, h)
     if renyi
         β = inv(renyiα)
-        @constraint(model, [h; ρAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks))
+        @constraint(model, [h; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks))
     else
         @constraint(model, [h; ρAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
     end

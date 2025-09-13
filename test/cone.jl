@@ -20,6 +20,7 @@ import Hypatia.Cones
 import Hypatia.RealOrComplex
 import ConicQKD.EpiQKDTri
 import ConicQKD.EpiRenyiQKDTri
+import ConicQKD.EpiFastRenyiQKDTri
 
 import ConicQKD.kraus2matrix
 import ConicQKD.skron
@@ -350,6 +351,18 @@ function show_time_alloc(cone::Type{EpiQKDTri{T,R}}) where {T,R}
 end
 
 function random_point!(point, cone::EpiRenyiQKDTri{T,R}) where {T,R}
+    ρ = random_state(R, cone.d)
+    σ = random_state(R, cone.d)
+    Gρ = smat(cone.G * svec(ρ))
+    S = cone.S
+    Zσ = smat.(cone.Z .* Ref(svec(σ)))
+    r = renyi_blocks(Gρ, Zσ, cone.α, S)
+    point[1] = cone.sα * r + 0.1
+    point[cone.ρ_idx] .= svec(ρ)
+    point[cone.σ_idx] .= svec(σ)
+end
+
+function random_point!(point, cone::EpiFastRenyiQKDTri{T,R}) where {T,R}
     rho = random_state(R, cone.d)
     Grho = smat(cone.G * svec(rho))
     S = cone.S
@@ -359,17 +372,18 @@ function random_point!(point, cone::EpiRenyiQKDTri{T,R}) where {T,R}
     point[2:end] .= svec(rho)
 end
 
-function test_oracles(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
+const RenyiCones{T,R} = Union{EpiRenyiQKDTri{T,R}, EpiFastRenyiQKDTri{T,R}}
+
+function test_oracles(cone::Type{<:RenyiCones{T,R}}) where {T,R}
     din, dout = 3, 4
-    α, G, Z, rho_dim, rho_idxs, blocks, S = random_protocol(cone, din, dout)
+    α, G, Z, rho_dim, blocks, S = random_protocol(cone, din, dout)
     test_oracles(cone(α, G, Z, 1 + rho_dim; S, blocks); init_tol = Inf)
 end
 
-function random_protocol(cone::Type{EpiRenyiQKDTri{T,R}}, din::Integer, dout::Integer) where {T,R}
+function random_protocol(cone::Type{<:RenyiCones{T,R}}, din::Integer, dout::Integer) where {T,R}
     α = T(9) / 10
 
     rho_dim = Cones.svec_length(R, din^2)
-    rho_idxs = 2:(rho_dim+1)
 
     U = random_unitary(R, dout)
     V = U[:, 1:din]
@@ -380,29 +394,52 @@ function random_protocol(cone::Type{EpiRenyiQKDTri{T,R}}, din::Integer, dout::In
 
     blocks = [(i-1)*din+1:i*din for i ∈ 1:dout]
 
-    return α, G, Z, rho_dim, rho_idxs, blocks, kron(V, I(din))
+    return α, G, Z, rho_dim, blocks, kron(V, I(din))
 end
 
 function test_barrier(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
     din, dout = 2, 3
-    α, gkraus, zkraus, rho_dim, rho_idxs, blocks, S = random_protocol(cone, din, dout)
+    α, gkraus, zkraus, rho_dim, blocks, S = random_protocol(cone, din, dout)
     sα = α < 1 ? -1 : 1
     G = kraus2matrix(gkraus)
     Z = kraus2matrix(zkraus)
 
     function barrier(point)
         u = point[1]
-        rhoH = smat(point[rho_idxs])
-        GrhoH = smat(G * point[rho_idxs])
-        ZrhoH = smat(Z * point[rho_idxs])
-        r = renyi(GrhoH, ZrhoH, α, S)
-        return -real(log(u - sα * r)) - logdet_pd(rhoH)
+        ρvec = point[2:rho_dim+1]
+        σvec = point[rho_dim+2:end]
+        ρ = smat(ρvec)
+        σ = smat(σvec)
+        Gρ = smat(G * ρvec)
+        Zσ = smat(Z * σvec)
+        r = renyi(Gρ, Zσ, α, S)
+        return -real(log(u - sα * r)) - logdet_pd(ρ) - logdet_pd(σ)
+
     end
     return test_barrier(cone(α, gkraus, zkraus, 1 + rho_dim; S, blocks), barrier; TFD = Float64)
 end
 
-function show_time_alloc(cone::Type{EpiRenyiQKDTri{T,R}}) where {T,R}
+function test_barrier(cone::Type{EpiFastRenyiQKDTri{T,R}}) where {T,R}
+    din, dout = 2, 3
+    α, gkraus, zkraus, rho_dim, blocks, S = random_protocol(cone, din, dout)
+    sα = α < 1 ? -1 : 1
+    G = kraus2matrix(gkraus)
+    Z = kraus2matrix(zkraus)
+
+    function barrier(point)
+        u = point[1]
+        ρvec = point[2:rho_dim+1]
+        ρ = smat(ρvec)
+        Gρ = smat(G * ρvec)
+        Zρ = smat(Z * ρvec)
+        r = renyi(Gρ, Zρ, α, S)
+        return -real(log(u - sα * r)) - logdet_pd(ρ)
+    end
+    return test_barrier(cone(α, gkraus, zkraus, 1 + rho_dim; S, blocks), barrier; TFD = Float64)
+end
+
+function show_time_alloc(cone::Type{<:RenyiCones{T,R}}) where {T,R}
     din, dout = 3, 4
-    α, gkraus, zkraus, rho_dim, rho_idxs, blocks, S = random_protocol(cone, din, dout)
+    α, gkraus, zkraus, rho_dim, blocks, S = random_protocol(cone, din, dout)
     return show_time_alloc(cone(α, gkraus, zkraus, 1 + rho_dim; S, blocks))
 end
