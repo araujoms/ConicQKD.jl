@@ -37,6 +37,7 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Gρ_dim::Int
     Zρ_dim::Vector{Int}
     ρ_idxs::UnitRange{Int}
+    σ_idxs::UnitRange{Int}
     ρ::Matrix{R}
     Gρ::Matrix{R}
     sqrtGρ::Matrix{R}
@@ -130,7 +131,7 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         cone.sα = α < 1 ? -1 : 1
         cone.dim = dim
         cone.is_complex = (R <: Complex)
-        cone.ρ_dim = dim - 1
+        cone.ρ_dim = div(dim - 1, 2)
         cone.d = size(Gkraus[1], 2)
         cone.Gd = size(Gkraus[1], 1)
         cone.Zd = length.(blocks)

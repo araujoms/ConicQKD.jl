@@ -6,7 +6,6 @@ mutable struct EpiFastRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     d::Int
     Gd::Int
     Zd::Vector{Int}
-    ZD::Int
     is_complex::Bool
     nblocks::Int
     blocks::Vector{UnitRange{Int}}
@@ -134,7 +133,6 @@ mutable struct EpiFastRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         cone.d = size(Gkraus[1], 2)
         cone.Gd = size(Gkraus[1], 1)
         cone.Zd = length.(blocks)
-        cone.ZD = sum(cone.Zd)
         cone.Gρ_dim = Cones.svec_length(R, cone.Gd)
         cone.Zρ_dim = Cones.svec_length.(Ref(R), cone.Zd)
 
@@ -174,7 +172,6 @@ function setup_extra_data!(cone::EpiFastRenyiQKDTri{T,R}) where {T<:Real,R<:Real
     d = cone.d
     Gd = cone.Gd
     Zd = cone.Zd
-    ZD = cone.ZD
     ρ_dim = cone.ρ_dim
     Gρ_dim = cone.Gρ_dim
     Zρ_dim = cone.Zρ_dim
