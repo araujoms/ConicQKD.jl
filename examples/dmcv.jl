@@ -165,7 +165,8 @@ function hbe_dmcv_general(
     ξ::T,
     α::T,
     renyiα::T = T(11) / 10;
-    renyi::Bool = false
+    renyi::Bool = false,
+    fast::Bool = true
 ) where {T<:AbstractFloat}
     dim_ρAB = 4 * (Nc + 1)
     model = GenericModel{T}()
@@ -194,8 +195,21 @@ function hbe_dmcv_general(
     @variable(model, h)
     @objective(model, Min, h)
     if renyi
-        β = inv(renyiα)
-        @constraint(model, [h; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks))
+        if fast
+            β = inv(renyiα)
+            @constraint(
+                model,
+                [h; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks)
+            )
+        else
+            β = inv(2 - inv(renyiα))
+            @variable(model, σAB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
+            σAB_vec = svec(σAB)
+            @constraint(
+                model,
+                [h; ρAB_vec; σAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + 2vec_dim; S, blocks)
+            )
+        end
     else
         @constraint(model, [h; ρAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
     end

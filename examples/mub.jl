@@ -78,17 +78,14 @@ function hae_mub(
     n::Integer = d + 1,
     α::T = T(11) / 10;
     analytical_mub::Bool = true,
-    renyi::Bool = false
+    renyi::Bool = false,
+    fast::Bool = true
 ) where {T<:AbstractFloat}
     is_complex = true
     model = GenericModel{T}()
-    if is_complex
-        @variable(model, ρ[1:d^2, 1:d^2], Hermitian)
-        R = Complex{T}
-    else
-        @variable(model, ρ[1:d^2, 1:d^2], Symmetric)
-        R = T
-    end
+    hermitian_space = Ket._sdp_parameters(is_complex)[3]
+    @variable(model, ρ[1:d^2, 1:d^2] ∈ hermitian_space)
+    R = is_complex ? Complex{T} : T
     corr_ρ = corr(T, ρ, d, n; analytical_mub)
     W = v + (1 - v) / d
     corr_iso = W * ones(n)
@@ -105,8 +102,15 @@ function hae_mub(
     @variable(model, h)
     @objective(model, Min, h)
     if renyi
-        β = inv(α)
-        @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+        if fast
+            β = inv(α)
+            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+        else
+            @variable(model, σ[1:d^2, 1:d^2] ∈ hermitian_space)
+            σ_vec = svec(σ)
+            β = inv(2 - inv(α))
+            @constraint(model, [h; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + 2vec_dim; blocks))
+        end
     else
         @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhat, 1 + vec_dim; blocks))
     end

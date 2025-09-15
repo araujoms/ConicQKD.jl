@@ -35,18 +35,19 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     is_S_identity::Bool
     ρ_dim::Int
     Gρ_dim::Int
-    Zρ_dim::Vector{Int}
+    Zσ_dim::Vector{Int}
     ρ_idxs::UnitRange{Int}
     σ_idxs::UnitRange{Int}
     ρ::Matrix{R}
+    σ::Matrix{R}
     Gρ::Matrix{R}
     sqrtGρ::Matrix{R}
     invsqrtGρ::Matrix{R}
-    Zρ::Vector{Matrix{R}}
-    hZρ::Vector{Matrix{R}}
-    ShZρ::Matrix{R}
-    sqrtShZρ::Matrix{R}
-    invsqrtShZρ::Matrix{R}
+    Zσ::Vector{Matrix{R}}
+    hZσ::Vector{Matrix{R}}
+    ShZσ::Matrix{R}
+    sqrtShZσ::Matrix{R}
+    invsqrtShZσ::Matrix{R}
     G::Matrix{T}
     S::Matrix{R}
     Z::Vector{Matrix{T}}
@@ -56,13 +57,13 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     Zadj::Vector{Matrix{T}}
     ρ_fact::Eigen{R,T,Matrix{R},Vector{T}}
     Gρ_fact::Eigen{R,T,Matrix{R},Vector{T}}
-    Zρ_fact::Vector{Eigen{R,T,Matrix{R},Vector{T}}}
+    Zσ_fact::Vector{Eigen{R,T,Matrix{R},Vector{T}}}
     ZG_fact::SVD{R,T,Matrix{R},Vector{T}}
     ρ_inv::Matrix{R}
     ρ_λ_inv::Vector{T}
     Gρ_λ_log::Vector{T}
-    Zρ_λ_log::Vector{Vector{T}}
-    hZρ_λ::Vector{Vector{T}}
+    Zσ_λ_log::Vector{Vector{T}}
+    hZσ_λ::Vector{Vector{T}}
     z::T
     Δ2_dg_ZGZ::Matrix{T}
     Δ3_dg_ZGZ::Array{T,3}
@@ -137,7 +138,7 @@ mutable struct EpiRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
         cone.Zd = length.(blocks)
         cone.ZD = sum(cone.Zd)
         cone.Gρ_dim = Cones.svec_length(R, cone.Gd)
-        cone.Zρ_dim = Cones.svec_length.(Ref(R), cone.Zd)
+        cone.Zσ_dim = Cones.svec_length.(Ref(R), cone.Zd)
 
         Gkraus = [R.(Gk) for Gk ∈ Gkraus]
         Zkraus = [R.(Zk) for Zk ∈ Zkraus]
@@ -178,19 +179,21 @@ function setup_extra_data!(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrCo
     ZD = cone.ZD
     ρ_dim = cone.ρ_dim
     Gρ_dim = cone.Gρ_dim
-    Zρ_dim = cone.Zρ_dim
+    Zσ_dim = cone.Zσ_dim
 
     cone.rt2 = sqrt(T(2))
     cone.ρ_idxs = 2:(ρ_dim+1)
+    cone.σ_idxs = cone.ρ_idxs .+ ρ_dim
     cone.ρ = zeros(R, d, d)
+    cone.σ = zeros(R, d, d)
     cone.Gρ = zeros(R, Gd, Gd)
     cone.sqrtGρ = zeros(R, Gd, Gd)
     cone.invsqrtGρ = zeros(R, Gd, Gd)
-    cone.Zρ = [zeros(R, s, s) for s ∈ Zd]
-    cone.hZρ = [zeros(R, s, s) for s ∈ Zd]
-    cone.ShZρ = zeros(R, Gd, Gd)
-    cone.sqrtShZρ = zeros(R, Gd, Gd)
-    cone.invsqrtShZρ = zeros(R, Gd, Gd)
+    cone.Zσ = [zeros(R, s, s) for s ∈ Zd]
+    cone.hZσ = [zeros(R, s, s) for s ∈ Zd]
+    cone.ShZσ = zeros(R, Gd, Gd)
+    cone.sqrtShZσ = zeros(R, Gd, Gd)
+    cone.invsqrtShZσ = zeros(R, Gd, Gd)
     cone.ρ_inv = zeros(R, d, d)
     cone.dΨdρ = zeros(T, ρ_dim)
     cone.d2Ψdρ2vec = zeros(T, ρ_dim)
@@ -205,8 +208,8 @@ function setup_extra_data!(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrCo
     cone.d2Ψdρ2 = zeros(T, ρ_dim, ρ_dim)
     cone.ρ_λ_inv = zeros(T, d)
     cone.Gρ_λ_log = zeros(T, Gd)
-    cone.Zρ_λ_log = [zeros(T, s) for s ∈ Zd]
-    cone.hZρ_λ = [zeros(T, s) for s ∈ Zd]
+    cone.Zσ_λ_log = [zeros(T, s) for s ∈ Zd]
+    cone.hZσ_λ = [zeros(T, s) for s ∈ Zd]
     cone.DhZmeat = [zeros(R, s, s) for s ∈ Zd]
 
     cone.mat = zeros(R, d, d)
@@ -231,36 +234,67 @@ function setup_extra_data!(cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrCo
 
     cone.vec = zeros(T, ρ_dim)
     cone.Gvec = zeros(T, Gρ_dim)
-    cone.Zvec = [zeros(T, s) for s ∈ Zρ_dim]
+    cone.Zvec = [zeros(T, s) for s ∈ Zσ_dim]
     cone.ds_g̃_ZGZ = zeros(T, Gρ_dim, Gρ_dim)
-    cone.ds_h_Zρ = [zeros(T, s, s) for s ∈ Zρ_dim]
+    cone.ds_h_Zρ = [zeros(T, s, s) for s ∈ Zσ_dim]
     cone.big_ρmat = zeros(T, ρ_dim, ρ_dim)
     cone.big_Gmat = zeros(T, Gρ_dim, Gρ_dim)
     cone.big_Gρmat = zeros(T, Gρ_dim, ρ_dim)
     cone.big_ρGmat = zeros(T, ρ_dim, Gρ_dim)
     cone.big_ρGmat2 = zeros(T, ρ_dim, Gρ_dim)
-    cone.big_Zmat = [zeros(T, s, s) for s ∈ Zρ_dim]
-    cone.big_ZGmat = [zeros(T, s, Gρ_dim) for s ∈ Zρ_dim]
-    cone.big_ρZmat = [zeros(T, ρ_dim, s) for s ∈ Zρ_dim]
+    cone.big_Zmat = [zeros(T, s, s) for s ∈ Zσ_dim]
+    cone.big_ZGmat = [zeros(T, s, Gρ_dim) for s ∈ Zσ_dim]
+    cone.big_ρZmat = [zeros(T, ρ_dim, s) for s ∈ Zσ_dim]
     return
 end
 
 get_nu(cone::EpiRenyiQKDTri) = cone.d + 1
 
+function initial_γδ(α::T, d::Integer) where {T<:AbstractFloat}
+    if α < 1
+        γ = √(1 + α / d)
+    else
+        γ = (((2α - 1) / α)^(α - 1) / (d * α + α^2))^(1 / (2α))
+    end
+    tol = sqrt(eps(T))
+    maxiter = 2ceil(log2(-log2(tol)))
+    counter = 0
+    while counter < maxiter
+        counter += 1
+        newγ = γ - newton_ratio(γ, α, d)
+        if abs(newγ - γ) < tol
+            γ = newγ
+            break
+        end
+        γ = newγ
+    end
+    counter == maxiter && error("Failed to compute initial point.")
+    δ = √((γ^2 - 1) * (1 - α) / α + 1)
+    return γ, δ
+end
+
+function newton_ratio(γ, α, d)
+    γ2m1 = γ^2 - 1
+    δ2 = 1 + γ2m1 * (1 - α) / α
+    f = γ2m1^2 * γ^(-2α) * δ2^(α - 1) + d * α * γ2m1 - α^2
+    df = γ2m1 * γ^(-2α - 1) * δ2^(α - 1) * (4γ^2 - 2α * γ2m1 - 2γ2m1 * γ^2 * (1 - α)^2 / (δ2 * α)) + 2d * α * γ
+    return f / df
+end
+
 function set_initial_point!(arr::AbstractVector{T}, cone::EpiRenyiQKDTri{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     d = cone.d
     blocks = cone.blocks
-    ShZρ = cone.ShZρ
-    sqrtShZρ = cone.sqrtShZρ
-    invsqrtShZρ = cone.invsqrtShZρ
-    hZρ = cone.hZρ
-    hZρ_λ = cone.hZρ_λ
+    ShZσ = cone.ShZσ
+    sqrtShZσ = cone.sqrtShZσ
+    invsqrtShZσ = cone.invsqrtShZσ
+    hZσ = cone.hZσ
+    hZσ_λ = cone.hZσ_λ
     Gmat = cone.Gmat
     Zmat = cone.Zmat
 
     h(x) = x^((1 - cone.α) / cone.α)
 
-    γ = sqrt(T(d + 3) / (2d + 2) - cone.sα * sqrt(1 + T(4) / (d + 1)^2) / 2)
+    γ, δ = initial_γδ(cone.α, d)
 
     incr = (cone.is_complex ? 2 : 1)
     arr .= 0
@@ -269,42 +303,47 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiRenyiQKDTri{T,R}) w
         arr[1+k] = γ
         k += incr * i + 1
     end
-    @views ρ_vec = arr[cone.ρ_idxs]
-    svec_to_smat!(cone.ρ, ρ_vec, cone.rt2)
+    k = 1
+    for i ∈ 1:d
+        arr[1+cone.ρ_dim+k] = δ
+        k += incr * i + 1
+    end
+    @views svec_to_smat!(cone.ρ, arr[cone.ρ_idxs], cone.rt2)
+    @views svec_to_smat!(cone.σ, arr[cone.σ_idxs], cone.rt2)
     if cone.is_G_identity
         cone.Gρ = cone.ρ
     else
         applykraus!(cone.Gρ, cone.Gk, Hermitian(cone.ρ), cone.Gρmat)
     end
-    applykraus!.(cone.Zρ, cone.Zk, Ref(Hermitian(cone.ρ)), cone.Zρmat)
+    applykraus!.(cone.Zσ, cone.Zk, Ref(Hermitian(cone.σ)), cone.Zρmat)
     cone.Gρ_fact = eigen(Hermitian(cone.Gρ))
-    cone.Zρ_fact = eigen.(Hermitian.(cone.Zρ))
+    cone.Zσ_fact = eigen.(Hermitian.(cone.Zσ))
     Gρ_λ, Gρ_U = cone.Gρ_fact
     mul!(Gmat, Gρ_U, Diagonal(fourthroot.(Gρ_λ)))
     mul!(cone.sqrtGρ, Gmat, Gmat')
-    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
-    Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
-    for i ∈ eachindex(Zρ_λ)
-        hZρ_λ[i] .= h.(Zρ_λ[i])
+    Zσ_λ = [fact.values for fact ∈ cone.Zσ_fact]
+    Zσ_U = [fact.vectors for fact ∈ cone.Zσ_fact]
+    for i ∈ eachindex(Zσ_λ)
+        hZσ_λ[i] .= h.(Zσ_λ[i])
     end
-    spectral_outer!.(hZρ, Zρ_U, hZρ_λ, Zmat)
+    spectral_outer!.(hZσ, Zσ_U, hZσ_λ, Zmat)
     if cone.is_S_identity
         for i ∈ eachindex(blocks)
-            @views ShZρ[blocks[i], blocks[i]] .= hZρ[i]
-            mul!(Zmat[i], Zρ_U[i], Diagonal(fourthroot.(hZρ_λ[i])))
-            @views mul!(sqrtShZρ[blocks[i], blocks[i]], Zmat[i], Zmat[i]')
+            @views ShZσ[blocks[i], blocks[i]] .= hZσ[i]
+            mul!(Zmat[i], Zσ_U[i], Diagonal(fourthroot.(hZσ_λ[i])))
+            @views mul!(sqrtShZσ[blocks[i], blocks[i]], Zmat[i], Zmat[i]')
         end
     else
-        fill!(ShZρ, 0)
+        fill!(ShZσ, 0)
         for i ∈ eachindex(blocks)
-            @views spectral_outer!(Gmat, cone.S[blocks[i], :]', Hermitian(hZρ[i]), cone.ZGmat[i])
-            ShZρ .+= Gmat
+            @views spectral_outer!(Gmat, cone.S[blocks[i], :]', Hermitian(hZσ[i]), cone.ZGmat[i])
+            ShZσ .+= Gmat
         end
-        ShZρ_λ, ShZρ_U = eigen(Hermitian(ShZρ))
-        mul!(Gmat, ShZρ_U, Diagonal(fourthroot.(ShZρ_λ)))
-        mul!(sqrtShZρ, Gmat, Gmat')
+        ShZσ_λ, ShZσ_U = eigen(Hermitian(ShZσ))
+        mul!(Gmat, ShZσ_U, Diagonal(fourthroot.(ShZσ_λ)))
+        mul!(sqrtShZσ, Gmat, Gmat')
     end
-    mul!(cone.ZG, cone.sqrtShZρ, cone.sqrtGρ)
+    mul!(cone.ZG, cone.sqrtShZσ, cone.sqrtGρ)
     renyi = mapreduce(x -> x^(2 * cone.α), +, svdvals(cone.ZG))
 
     arr[1] = (cone.sα * renyi + sqrt(4 + renyi^2)) / 2
