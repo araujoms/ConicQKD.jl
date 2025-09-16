@@ -204,6 +204,7 @@ function hbe_dmcv_general(
         else
             β = inv(2 - inv(renyiα))
             @variable(model, σAB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
+            @constraint(model, tr(σAB) == 1)
             σAB_vec = svec(σAB)
             @constraint(
                 model,

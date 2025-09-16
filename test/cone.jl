@@ -93,14 +93,15 @@ function test_oracles(
     grad = Cones.grad(cone)
     @test dot(point, grad) ≈ -nu atol = tol rtol = tol
 
-    return
-
     hess = Matrix(Cones.hess(cone))
     inv_hess = Matrix(Cones.inv_hess(cone))
     @test hess * inv_hess ≈ I atol = tol rtol = tol
 
     @test hess * point ≈ -grad atol = tol rtol = tol
     prod_vec = zero(point)
+
+    return
+
     @test Cones.hess_prod!(prod_vec, point, cone) ≈ -grad atol = tol rtol = tol
 
     prod_mat = zeros(T, dim, dim)
@@ -145,8 +146,6 @@ function test_barrier(
     fd_grad = ForwardDiff.gradient(barrier, point)
     @test Cones.grad(cone) ≈ fd_grad atol = tol rtol = tol
 
-    return
-
     dir = 10 * randn(T, dim)
     barrier_dir(s, t) = barrier(s + t * dir)
 
@@ -155,6 +154,9 @@ function test_barrier(
     @test Cones.hess(cone) * dir ≈ fd_hess_dir atol = tol rtol = tol
     @test Cones.inv_hess(cone) * fd_hess_dir ≈ dir atol = tol rtol = tol
     prod_vec = zero(dir)
+
+    return
+
     @test Cones.hess_prod!(prod_vec, dir, cone) ≈ fd_hess_dir atol = tol rtol = tol
 
     if Cones.use_dder3(cone)

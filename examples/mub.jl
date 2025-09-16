@@ -107,6 +107,7 @@ function hae_mub(
             @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
         else
             @variable(model, σ[1:d^2, 1:d^2] ∈ hermitian_space)
+            @constraint(model, tr(σ) == 1)
             σ_vec = svec(σ)
             β = inv(2 - inv(α))
             @constraint(model, [h; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + 2vec_dim; blocks))
