@@ -268,12 +268,11 @@ function initial_γδ(α::T, d::Integer) where {T<:AbstractFloat}
     counter = 0
     while counter < maxiter
         counter += 1
-        newγ = γ - newton_ratio(γ, α, d)
-        if abs(newγ - γ) < tol
-            γ = newγ
+        step = newton_ratio(γ, α, d)
+        γ -= step
+        if abs(step) < tol
             break
         end
-        γ = newγ
     end
     counter == maxiter && error("Failed to compute initial point.")
     δ = √((γ^2 - 1) * (1 - α) / α + 1)
