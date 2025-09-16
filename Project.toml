@@ -3,6 +3,7 @@ uuid = "89930fff-1c97-468e-be5c-77ab6ddad2d9"
 version = "0.2.0"
 
 [deps]
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
 Hypatia = "b99e6be6-89ff-11e8-14f8-45c827f4f8f2"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -27,11 +28,11 @@ Test = "1"
 julia = "1.9"
 
 [extras]
+DoubleFloats = "497a8b3b-efae-58df-a0af-a86822472b78"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-DoubleFloats = "497a8b3b-efae-58df-a0af-a86822472b78"
 
 [targets]
 test = ["ForwardDiff", "Printf", "Random", "Test", "DoubleFloats"]

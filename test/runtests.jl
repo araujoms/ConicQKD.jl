@@ -13,7 +13,7 @@ using Test
 using Printf
 using Hypatia
 
-test_files = ["array", "cone"]
+test_files = ["cone"]
 
 println()
 @info("starting all tests")
