@@ -513,7 +513,7 @@ function hess_prod!(prod::AbstractVecOrMat, arr::AbstractVecOrMat, cone::EpiFast
         d2Ψdρ2!(cone.d2Ψdρ2vec, ρ_arr_mat, cone)
         @. ρ_prod += sα * zi * cone.d2Ψdρ2vec
 
-        # Hessian of log(det(ρ))
+        # Hessian of logdet(ρ)
         spectral_outer!(cone.mat3, ρ_U', Hermitian(ρ_arr_mat), cone.mat2)  # U' ξ U
         ldiv!(Diagonal(ρ_λ), cone.mat3)  # Λ^-1 U' ξ U
         rdiv!(cone.mat3, Diagonal(ρ_λ))  # Λ^-1 U' ξ U Λ^-1
@@ -562,7 +562,7 @@ function d2Ψdρ2!(
     if cone.is_G_identity
         spectral_outer!(Gmat2, Gmat3, Hermitian(ρ_arr_mat), Gmat4)
         Gmat .= cone.Δ2_dg_ZGZ .* Gmat2
-        spectral_outer!(cone.mat2, Gmat3', Hermitian(Gmat), Gmat4)
+        spectral_outer!(d2Ψdρ2, Gmat3', Hermitian(Gmat), Gmat4)
     else
         applykraus!(Gmat, Gk, Hermitian(ρ_arr_mat), cone.Gρmat)
         spectral_outer!(Gmat2, Gmat3, Hermitian(Gmat), Gmat4)
@@ -572,7 +572,6 @@ function d2Ψdρ2!(
     end
 
     #ZG Z' ∘ Dh(Zρ)[S Z_S^-½ ⋅Z_S^-½ S'] ∘ Dg̃(Z_S^½ Gρ Z_S^½)[Z_S^½ ⋅ Z_S^½] ∘ G
-    Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
     Zρ_U = [fact.vectors for fact ∈ cone.Zρ_fact]
     Gmat3 = U_ZGZ' * cone.sqrtShZρ
     if cone.is_G_identity

@@ -59,8 +59,8 @@ function test_oracles(
     Cones.load_dual_point(cone, dual_point)
     @test Cones.is_dual_feas(cone)
     @test cone.dual_point == dual_point
-    # @test Cones.get_proxsqr(cone, one(T), true) <= 1 # max proximity
-    # @test Cones.get_proxsqr(cone, one(T), false) <= dim # sum proximity
+    @test Cones.get_proxsqr(cone, one(T), true) <= 1 # max proximity
+    @test Cones.get_proxsqr(cone, one(T), false) <= dim # sum proximity
 
     # test centrality of initial point
     if isfinite(init_tol)
@@ -69,14 +69,10 @@ function test_oracles(
     init_only && return
 
     # test at initial point
-    # prod_vec = zero(point)
-    # hess = Cones.hess(cone)
-    # @test hess * point ≈ dual_point atol = tol rtol = tol
-    # @test Cones.hess_prod!(prod_vec, point, cone) ≈ dual_point atol = tol rtol = tol
-    # inv_hess = Cones.inv_hess(cone)
-    # @test inv_hess * dual_point ≈ point atol = tol rtol = tol
-    # @test Cones.inv_hess_prod!(prod_vec, dual_point, cone) ≈ point atol = tol rtol = tol
-    # @test hess * inv_hess ≈ I atol = tol rtol = tol
+    prod_vec = zero(point)
+    hess = Cones.hess(cone)
+    @test hess * point ≈ dual_point atol = tol rtol = tol
+    @test Cones.hess_prod!(prod_vec, point, cone) ≈ dual_point atol = tol rtol = tol
 
     # generate random valid point
     random_point!(point, cone)
@@ -99,8 +95,6 @@ function test_oracles(
 
     @test hess * point ≈ -grad atol = tol rtol = tol
     prod_vec = zero(point)
-
-    return
 
     @test Cones.hess_prod!(prod_vec, point, cone) ≈ -grad atol = tol rtol = tol
 
@@ -154,9 +148,6 @@ function test_barrier(
     @test Cones.hess(cone) * dir ≈ fd_hess_dir atol = tol rtol = tol
     @test Cones.inv_hess(cone) * fd_hess_dir ≈ dir atol = tol rtol = tol
     prod_vec = zero(dir)
-
-    return
-
     @test Cones.hess_prod!(prod_vec, dir, cone) ≈ fd_hess_dir atol = tol rtol = tol
 
     if Cones.use_dder3(cone)

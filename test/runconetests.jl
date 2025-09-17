@@ -18,12 +18,12 @@ include(joinpath(@__DIR__, "cone.jl"))
 
 function cone_types(T::Type{<:Real})
     cones_T = [
-        #ConicQKD.EpiQKDTri{T,T}
-        #ConicQKD.EpiQKDTri{T,Complex{T}}
+        ConicQKD.EpiQKDTri{T,T}
+        ConicQKD.EpiQKDTri{T,Complex{T}}
         ConicQKD.EpiRenyiQKDTri{T,T}
         ConicQKD.EpiRenyiQKDTri{T,Complex{T}}
-        #ConicQKD.EpiFastRenyiQKDTri{T,T}
-        #ConicQKD.EpiFastRenyiQKDTri{T,Complex{T}}
+        ConicQKD.EpiFastRenyiQKDTri{T,T}
+        ConicQKD.EpiFastRenyiQKDTri{T,Complex{T}}
     ]
 
     return cones_T
