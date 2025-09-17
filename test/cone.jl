@@ -343,8 +343,8 @@ function show_time_alloc(cone::Type{EpiQKDTri{T,R}}) where {T,R}
 end
 
 function random_point!(point, cone::EpiRenyiQKDTri{T,R}) where {T,R}
-    ρ = random_state(R, cone.d)
-    σ = random_state(R, cone.d)
+    ρ = random_state(R, cone.ρd)
+    σ = random_state(R, cone.σd)
     Gρ = smat(cone.G * svec(ρ))
     S = cone.S
     Zσ = smat.(cone.Z .* Ref(svec(σ)))

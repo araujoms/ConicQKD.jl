@@ -781,7 +781,6 @@ function update_hess(cone::EpiFastRenyiQKDTri)
     mul!(d2Ψdρ2, cone.big_ρGmat2, cone.big_ρGmat', true, true)
 
     ##    + Z' ∘ D²h(Zρ)[ ⋅, S Gρ^½ dg(Gρ^½ Z_S Gρ^½) Gρ^½ S'] ∘ Z
-    #TODO: incorporate Z and Zadj in d2_spectral!
     d2_spectral!.(cone.big_Zmat, Zρ_Uadj, cone.Δ3_h_ZρW̃, cone.Zmat, cone.Zmat2, Ref(cone.rt2))
     for i ∈ eachindex(blocks)
         mul!(cone.big_ρZmat[i], cone.Zadj[i], cone.big_Zmat[i])
