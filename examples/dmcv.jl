@@ -224,7 +224,6 @@ function hbe_dmcv_general(
         return value(h) / log(T(2))
     end
     return objective_value(model)
-    return solve_time(model)
 end
 
 coherent(Nc::Integer, β::Number) = exp(-abs2(β) / 2) * [β^n / sqrt(factorial(n)) for n ∈ 0:Nc]

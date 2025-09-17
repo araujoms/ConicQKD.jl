@@ -5,13 +5,7 @@ using Ket
 import Hypatia
 import Hypatia.Cones
 
-function zgmap(rho::AbstractMatrix, d::Integer)
-    K = zgkraus(d)
-    zgrho = sum(K[i] * rho * K[i] for i ∈ 1:d)
-    return zgrho
-end
-
-function zgkraus(d::Integer)
+function zkraus(d::Integer)
     K = [kron(proj(i, d), I(d)) for i ∈ 1:d]
     return K
 end
@@ -78,30 +72,49 @@ corr(rho::AbstractMatrix, bases::AbstractVector) = real(dot.(Ref(rho), bases))
 
 hab_overlap(v::T, d) where {T<:AbstractFloat} = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(T(d) - 1)
 
-function hae_overlap(v::T, d::Integer) where {T<:AbstractFloat}
+function hae_overlap(v::T, d::Integer, α::T = T(11) / 10; renyi = false, fast = true) where {T<:AbstractFloat}
     model = GenericModel{T}()
-    @variable(model, rho[1:d^2, 1:d^2], Symmetric)
+    @variable(model, ρ[1:d^2, 1:d^2], Symmetric)
     bases = bases_full(T, d)
-    corr_rho = corr(rho, bases)
-    corr_iso = corr(isotropic(v, d), bases)
-    @constraint(model, corr_rho .== corr_iso)
-    @constraint(model, tr(rho) == 1)
+    corr_ρ = corr(ρ, bases)
+    corr_iso = corr(state_phiplus(T, d; v), bases)
+    @constraint(model, corr_ρ .== corr_iso)
+    @constraint(model, tr(ρ) == 1)
 
     vec_dim = Cones.svec_length(T, d^2)
-    rho_vec = svec(rho)
+    ρ_vec = svec(ρ)
 
     Ghat = [I(d^2)]
-    Zhat = zgkraus(d)
+    Zhat = zkraus(d)
     blocks = [(i-1)*d+1:i*d for i ∈ 1:d]
 
     @variable(model, h)
-    @objective(model, Min, h / log(T(2)))
-    @constraint(model, [h; rho_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim; blocks))
+    @objective(model, Min, h)
+    if renyi
+        if fast
+            β = inv(α)
+            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+        else
+            @variable(model, σ[1:d^2, 1:d^2], Symmetric)
+            @constraint(model, tr(σ) == 1)
+            σ_vec = svec(σ)
+            β = inv(2 - inv(α))
+            @constraint(model, [h; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + 2vec_dim; blocks))
+        end
+    else
+        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim; blocks))
+    end
 
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
-    JuMP.optimize!(model)
-    return JuMP.objective_value(model)
+    optimize!(model)
+    if renyi
+        sβ = β < 1 ? -1 : 1
+        return log2(sβ * value(h)) / (β - 1)
+    else
+        return value(h) / log(T(2))
+    end
+    return objective_value(model)
 end
 
 rate_overlap(v::T, d::Integer) where {T<:AbstractFloat} = hae_overlap(v, d) - hab_overlap(v, d)

@@ -126,8 +126,7 @@ function hae_mub(
         return value(h) / log(T(2))
     end
     return objective_value(model)
-    return solve_time(model)
 end
 
-rate_mub(v::T, d::Integer, n::Integer = d + 1; analytical_mub::Bool = false) where {T<:AbstractFloat} =
+rate_mub(v::AbstractFloat, d::Integer, n::Integer = d + 1; analytical_mub::Bool = false) =
     hae_mub(v, d, n; analytical_mub) - hab_mub(v, d)

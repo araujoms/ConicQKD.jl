@@ -25,7 +25,7 @@ function corr(ρ)
     return real(dot.(Ref(ρ), global_basis))
 end
 
-function hae_bb84_general(qz::T, qx::T) where {T<:AbstractFloat}
+function hae_bb84_general(qz::T, qx::T, α::T = T(11) / 10; renyi = false, fast = true) where {T<:AbstractFloat}
     model = GenericModel{T}()
     dim_ρ = 4
     @variable(model, ρ[1:dim_ρ, 1:dim_ρ], Symmetric)
@@ -35,18 +35,37 @@ function hae_bb84_general(qz::T, qx::T) where {T<:AbstractFloat}
 
     Ghat = [I(dim_ρ)]
     Zhat = zkraus()
+    blocks = [1:2, 3:4]
 
     vec_dim = Cones.svec_length(T, dim_ρ)
     ρ_vec = svec(ρ)
 
     @variable(model, h)
-    @objective(model, Min, h / log(T(2)))
-    @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim))
+    @objective(model, Min, h)
+    if renyi
+        if fast
+            β = inv(α)
+            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+        else
+            @variable(model, σ[1:dim_ρ, 1:dim_ρ], Symmetric)
+            @constraint(model, tr(σ) == 1)
+            σ_vec = svec(σ)
+            β = inv(2 - inv(α))
+            @constraint(model, [h; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + 2vec_dim; blocks))
+        end
+    else
+        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim; blocks))
+    end
 
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
     optimize!(model)
-    #return solve_time(model)
+    if renyi
+        sβ = β < 1 ? -1 : 1
+        return log2(sβ * value(h)) / (β - 1)
+    else
+        return value(h) / log(T(2))
+    end
     return objective_value(model)
 end
 
