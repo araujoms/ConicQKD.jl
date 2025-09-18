@@ -8,12 +8,8 @@ import Hypatia.Cones
 import Integrals
 
 function integrand(vars, pars)
-    γ = vars[1]
-    θ = vars[2]
-    ξ = pars[1]
-    η = pars[2]
-    x = pars[3]
-    α = pars[4]
+    γ, θ = vars
+    ξ, η, x, α = pars
     return γ * exp(-abs2(γ * exp(im * θ) - sqrt(η) * im^x * α) / (1 + η * ξ / 2))
 end
 
@@ -137,21 +133,11 @@ function constraint_expectations(::Type{T}, ρ::AbstractMatrix, Nc::Integer) whe
     return real(dot.(Ref(ρ), bases_AB))
 end
 
-function gmap(::Type{T}, ρ::AbstractMatrix, Nc::Integer) where {T}
-    V = gkraus(T, Nc)
-    return Hermitian(V * ρ * V')
-end
-
 function gkraus(::Type{T}, Nc::Integer) where {T<:Real}
     sqrtbasis = sqrt.(region_operators(T, Nc))
-    #    cleanup!.(sqrtbasis;tol=10^3*eps(T))
+    #cleanup!.(sqrtbasis;tol=10^3*eps(T))
     V = sum(kron(I(4), sqrtbasis[i], ket(i, 4)) for i ∈ 1:4)
-    return V
-end
-
-function zmap(ρ::AbstractMatrix, Nc::Integer)
-    K = zkraus(Nc)
-    return Hermitian(sum(K[i] * ρ * K[i] for i ∈ 1:4))
+    return [V]
 end
 
 function zkraus(Nc::Integer)
@@ -181,10 +167,10 @@ function hbe_dmcv_general(
     G = gkraus(T, Nc)
     Ghat = [I(dim_ρAB)]
     Z = zkraus(Nc)
-    Zhat = [Zi * G for Zi ∈ Z]
+    Zhat = [Zi * G[1] for Zi ∈ Z]
     permutation = vec(reshape(1:16*(Nc+1), 4, 4 * (Nc + 1))')
     Zhatperm = [Zi[permutation, :] for Zi ∈ Zhat]
-    S = G[permutation, :]
+    S = G[1][permutation, :]
 
     block_size = 4 * (Nc + 1)
     blocks = [(i-1)*block_size+1:i*block_size for i ∈ 1:4]
@@ -228,8 +214,16 @@ end
 
 coherent(Nc::Integer, β::Number) = exp(-abs2(β) / 2) * [β^n / sqrt(factorial(n)) for n ∈ 0:Nc]
 isometry(Nc::Integer, α::Real) = sum(kron(ket(x + 1, 4), coherent(Nc, im^x * α)) * ket(x + 1, 4)' for x ∈ 0:3)
-function hbe_dmcv_reduced(Nc::Integer, L::T, α::T) where {T<:AbstractFloat}
+function hbe_dmcv_reduced(
+    Nc::Integer,
+    L::T,
+    α::T,
+    renyiα::T = T(11) / 10;
+    renyi::Bool = false,
+    fast::Bool = true
+) where {T<:AbstractFloat}
     dim_σAB = 4
+    dim_ρAB = 4 * (Nc + 1)
     model = GenericModel{T}()
 
     η = 10^(-2 * L / 100)
@@ -239,8 +233,8 @@ function hbe_dmcv_reduced(Nc::Integer, L::T, α::T) where {T<:AbstractFloat}
     end
     σAB = Hermitian(σAB)
 
-    #    V = isometry(Nc,sqrt(η)*α)
-    #    ρAB = Hermitian(V*σAB*V')
+    #V = isometry(Nc, sqrt(η) * α)
+    #ρAB = Hermitian(V * σAB * V')
 
     sqrtbasis = sqrt.(region_operators(T, Nc))
     states = [sqrtbasis[k] * coherent(Nc, im^x * sqrt(η) * α) for k ∈ 1:4, x ∈ 0:3]
@@ -259,14 +253,50 @@ function hbe_dmcv_reduced(Nc::Integer, L::T, α::T) where {T<:AbstractFloat}
     σAB_vec = svec(σAB)
 
     @variable(model, h)
-    @objective(model, Min, h / log(T(2)))
-    @constraint(model, [h; σAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
-
+    @objective(model, Min, h)
+    if renyi
+        V = isometry(Nc, sqrt(η) * α)
+        G = gkraus(T, Nc)
+        if fast
+            β = inv(renyiα)
+            W = sum(kron(ket(j, 4), states[i, j] * ket(j, 4)' / norms[i, j], proj(i, 4)) for j ∈ 1:4 for i ∈ 1:4)
+            # Z[i] * G[1] * V = W * Zhat[i]
+            S = (W'*G[1]*V)[permutation, :]
+            @constraint(
+                model,
+                [h; σAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks)
+            )
+        else
+            β = inv(2 - inv(renyiα))
+            @variable(model, σ2AB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
+            @constraint(model, tr(σ2AB) == 1)
+            σ2AB_vec = svec(σ2AB)
+            Z = zkraus(Nc)
+            Zhat = [Zi * G[1] for Zi ∈ Z]
+            permutation = vec(reshape(1:16*(Nc+1), 4, 4 * (Nc + 1))')
+            Zhatperm = [Zi[permutation, :] for Zi ∈ Zhat]
+            block_size = 4 * (Nc + 1)
+            blocks = [(i-1)*block_size+1:i*block_size for i ∈ 1:4]
+            S = (G[1]*V)[permutation, :]
+            @constraint(
+                model,
+                [h; σAB_vec; σ2AB_vec] in
+                EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + length(σAB_vec) + length(σ2AB_vec); S, blocks)
+            )
+        end
+    else
+        @constraint(model, [h; σAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
+    end
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
     optimize!(model)
+    if renyi
+        sβ = β < 1 ? -1 : 1
+        return log2(sβ * value(h)) / (β - 1)
+    else
+        return value(h) / log(T(2))
+    end
     return objective_value(model)
-    return solve_time(model)
 end
 
 function hbe_dmcv(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFloat}
