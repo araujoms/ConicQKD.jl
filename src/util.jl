@@ -282,7 +282,7 @@ function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector
         for i ∈ 1:(j-1)
             λ_ij = λ[i] - λ[j]
             if abs(λ_ij) < rteps
-                Δ2[i, j] = 0.5 * (dfλ[i] + dfλ[j])
+                Δ2[i, j] = (dfλ[i] + dfλ[j]) / 2
             else
                 Δ2[i, j] = (fλ[i] - fλ[j]) / λ_ij
             end
