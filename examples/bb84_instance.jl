@@ -125,12 +125,12 @@ function conic_BB84(
     renyi  ::Bool = false
     ) where {T<:AbstractFloat}
 
-    d = dimA*dimB; R = Complex{T}
+    d = dimA*dimB
 
     model = GenericModel{T}()
     
     # Variables
-    @variable(model, ρ[1:d, 1:d], Hermitian)
+    @variable(model, ρAB[1:d, 1:d], Hermitian)
     @variable(model, qK ≥ 0)
     @variable(model, q[1:length(ΠAB(pK))] ≥ 0) 
     @variable(model, h_QKD)
@@ -160,8 +160,8 @@ function conic_BB84(
     Zhat = [Zi*G for Zi in Z]
     blocks = [(i-1)*d+1:i*d for i ∈ 1:d] # TODO: checkear esto
 
-    vec_dim = Cones.svec_length(R, d)
-    ρ_vec = svec(ρ)
+    vec_dim = Cones.svec_length(Complex, d)
+    ρAB_vec = svec(ρAB)
 
     # Conic program
     if renyi
@@ -169,13 +169,13 @@ function conic_BB84(
         if fast
             β = inv(renyiα)
             #TODO:  understand and define S
-            @constraint(model, [Ψ; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim;S, blocks))
+            @constraint(model, [Ψ; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
         else
             β = inv(2 - inv(renyiα))
             @variable(model, σAB[1:d, 1:d], Hermitian)
             @constraint(model, tr(σAB) == 1)
             σAB_vec = svec(σAB)
-            @constraint(model, [Ψ; ρAB_vec;σAB_vec]) in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat,(β, Ghat, Z, 1 + length(ρ_vec) + length(σ_vec); S = V, blocks))
+            @constraint(model, [Ψ; ρAB_vec;σAB_vec]) in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat,(β, Ghat, Zhat, 1 + length(ρ_vec) + length(σ_vec); blocks))
         end
         sβ = β < 1 ? -1 : 1
         @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
@@ -192,7 +192,7 @@ function conic_BB84(
 
     # Extract results
     if renyi
-        
+        h_renyi = dual_objective_value(model)
     else
         throw("Not implemented yet")
     end
