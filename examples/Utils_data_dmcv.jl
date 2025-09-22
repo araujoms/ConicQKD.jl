@@ -90,4 +90,3 @@ end
 #         optimal_renyi =
 #     return D < length(optimal_renyi) ? optimal_renyi[D+1] : optimal_renyi[end]
 # end
-
