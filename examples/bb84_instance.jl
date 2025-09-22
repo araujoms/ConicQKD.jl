@@ -116,56 +116,70 @@ function constraint_probabilities_bb84(ρ::AbstractMatrix, pK::T) where {T<:Abst
 end
 
 
+function conic_BB84(
+    v      ::T, 
+    N      ::T, 
+    pK     ::T,
+    ϵcompPE::T, 
+    renyiα ::T; 
+    renyi  ::Bool = false
+    ) where {T<:AbstractFloat}
 
-function conic_BB84(v::T, N::T, pK::T, n::Integer, ϵcompPE::T, α::T; renyi::Bool = false) where {T<:AbstractFloat}
-    d = dimA*dimB
+    d = dimA*dimB; R = Complex{T}
+
     model = GenericModel{T}()
+    
+    # Variables
     @variable(model, ρ[1:d, 1:d], Hermitian)
-    R = Complex{T}
-
-    # Optimized probabilities
     @variable(model, qK ≥ 0)
     @variable(model, q[1:length(ΠAB(pK))] ≥ 0) 
+    @variable(model, h_QKD)
+    @variable(model, h_KL)
+
+    # Constraints on the marginal state
+    ρA = partial_trace(ρAB, 2, [2, 3])
+    @constraint(model, ρA == partial_trace(alice_depol_loss(v,η), 2, [2, 3]))
+
+    # Constraints on probabilities
     @constraint(model, sum(q) + qK == 1)
 
-    # Simulated probabilities 
-    p_sim = simulated_probabilities_bb84(v, η, pK)
+    # Constraints on exp vals via KL divergence
     p_ρAB = constraint_probabilities_bb84(ρ, pK)
-
-    # Add constraints
-    @constraint(model, tr(ρ)==T(1))
-
+    @constraint(model, [h_KL; p_ρAB[:];pK^2; q[:];qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
+    
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # TODO: check
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
+    p_sim = simulated_probabilities_bb84(v, η, pK)
     @constraint(model, [δ; q[:] - p_sim[:];qK - pK^2] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
 
-
+    # Key map
     G = gkraus(pK)
-    Ghat = I(d) # TODO: check
+    Ghat = I(d) 
     Z = zkraus(dimB)
     Zhat = [Zi*G for Zi in Z]
     blocks = [(i-1)*d+1:i*d for i ∈ 1:d] # TODO: checkear esto
 
     vec_dim = Cones.svec_length(R, d)
     ρ_vec = svec(ρ)
-    
 
-    # KL cone #TODO revisar eso, pero parece que está bien...
-    @variable(model, h_KL)
-    @constraint(model, [h_KL; p_ρAB[:];pK^2; q[:];qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
-
-
-    # QKD (Rényi) cone 
-    @variable(model, Ψ)
+    # Conic program
     if renyi
-        @variable(model, h)
-        β = inv(2 - inv(α))
+        @variable(model, Ψ)
+        if fast
+            β = inv(renyiα)
+            #TODO:  understand and define S
+            @constraint(model, [Ψ; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim;S, blocks))
+        else
+            β = inv(2 - inv(renyiα))
+            @variable(model, σAB[1:d, 1:d], Hermitian)
+            @constraint(model, tr(σAB) == 1)
+            σAB_vec = svec(σAB)
+            @constraint(model, [Ψ; ρAB_vec;σAB_vec]) in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat,(β, Ghat, Z, 1 + length(ρ_vec) + length(σ_vec); S = V, blocks))
+        end
         sβ = β < 1 ? -1 : 1
-        @constraint(model, [Ψ; ρ_vec] in EpiRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
-        @constraint(model, [h * (β - 1), 1, sβ * Ψ] in MOI.ExponentialCone())
-        # TODO en paper aparece qK - δ!!! 
-        @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK^2-δ)*inv(log(T(2)))*h)
+        @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
+        @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
     else
         throw("Not implemented yet")
         # @constraint(model, [Ψ; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhatperm, 1 + vec_dim; blocks))
@@ -178,11 +192,11 @@ function conic_BB84(v::T, N::T, pK::T, n::Integer, ϵcompPE::T, α::T; renyi::Bo
 
     # Extract results
     if renyi
-        ObjVal = dual_objective_value(model)
+        
     else
         throw("Not implemented yet")
     end
-    return ObjVal
+    return h_renyi 
 end
 
 function Finite_bb84(L::Integer, f::T, N::T, pK::T, Nc::Integer, Δs::T, Δ::T; renyi::Bool = false) where {T<:AbstractFloat}
@@ -237,7 +251,7 @@ function Instance_dmcv(
 
     # Start loop for various values of the distance
     # Threads.@threads 
-    for L ∈ [1,5:5:40]
+    for L ∈ vcat(1,5:5:40)
         @printf("Distance: %d ---------\n",L)
         Finite_SKR, optimal_α, γ, leak_EC  = Finite_dmcv(L, f, N, pK, Nc; renyi = true)
 

@@ -9,8 +9,51 @@ import Integrals
 
 using Printf
 using Parameters
+import Optim
 
-# import MOI: ExponentialCone
+include("Utils_data_dmcv.jl")
+
+@with_kw struct epsilon_coeffs{T<:AbstractFloat}
+    ϵCR::T = 1e-11
+    ϵPA::T = 9e-11
+    ϵPE::T = 9e-11
+    ϵcompPE::T = 9e-11
+end
+
+@with_kw struct Finite_pars{T<:AbstractFloat}
+    ϵPA::T
+    ϵPE::T
+    L::Integer
+    N::T
+    Nc::Integer
+    pK::T
+    Δs::T
+    Δ::T
+    ϵcompPE::T
+    γ::T
+    leak_EC::T
+    renyi::Bool
+    fast::Bool
+end
+
+function FiniteSKR(renyiα, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
+    
+    # unpack pars
+    @unpack ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, renyi, fast = finiteSKR_pars
+    
+    # Total correction
+    correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
+
+    # Conic program
+    h_renyi = hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, renyiα ; renyi, fast)
+
+    FiniteSecretKey = h_renyi - correction
+
+    # Some log info
+    @printf("α-1 = %.5e, SKR = %.2e \n", renyiα-1, FiniteSecretKey)
+
+    return FiniteSecretKey
+end
 
 
 function alice_part(γ::Real)
@@ -24,38 +67,63 @@ function alice_part(γ::Real)
     ρ *= 0.25
 end
 
-
-function integrand(vars,pars)
-    ζ = vars[1]
-    θ = vars[2]
-    ξ = pars[1]
-    η = pars[2]
-    x = pars[3]
-    γ = pars[4]
-
-    return ζ*exp(-abs2(ζ*exp(im*θ)-sqrt(η)*im^x*γ)/(1+η*ξ/2))
+function integrand(vars, pars)
+    ζ, θ = vars
+    ξ, η, x, γ = pars
+    return ζ * exp(-abs2(ζ * exp(im * θ) - sqrt(η) * im^x * γ) / (1 + η * ξ / 2))
 end
 
 function integrate(bounds, pars)
     T = eltype(pars)
     problem = Integrals.IntegralProblem(integrand, bounds, pars)
-    tol = T == Float64 ? eps(T) : sqrt(eps(T))
+    tol = T == Float64 ? eps(T)^(3 / 4) : sqrt(eps(T))
     sol = Integrals.solve(problem, Integrals.HCubatureJL(); reltol = tol, abstol = tol)
     return sol.u
 end
 
-function sinkpi4(::Type{T}, k::Integer) where {T<:AbstractFloat}
-    if mod(k,4) == 0
+function joint_probability(L::Integer, ξ::T, α::T) where {T<:AbstractFloat}
+    α_att = T(2)/10
+    η = 10^(- α_att*L / 10)
+    pAB = zeros(T, 4, 4)
+    for x ∈ 0:3
+        pars = [ξ, η, x, α]
+        for z ∈ 0:3
+            bounds = ([T(0), T(π) * (2 * z - 1) / 4], [T(Inf), T(π) * (2 * z + 1) / 4])
+            pAB[x+1, z+1] = integrate(bounds, pars)
+        end
+    end
+    pAB ./= 4 * T(π) * (1 + η * ξ / 2)
+    return pAB
+end
+
+function hba_dmcv(L::Integer, ξ::T, γ::T) where {T<:AbstractFloat}
+    pAB = joint_probability(L, ξ, γ)
+    pBA = transpose(pAB)
+    return conditional_entropy(pBA)
+end
+
+
+function alice_part(α::T) where {T<:Real}
+    ρ = zeros(Complex{T}, 4, 4)
+    for j ∈ 0:3, i ∈ 0:j
+        ρ[i+1, j+1] = 0.25 * exp(-α^2 * (1 - (1.0 * im)^(i - j)))
+    end
+    return Hermitian(ρ)
+end
+
+function sinkpi4(::Type{T}, k::Integer) where {T<:Real} #computes sin(k*π/4) with high precision
+    if mod(k, 4) == 0
         return T(0)
     else
-        signal = T((-1)^div(k,4,RoundDown))
-        if mod(k,2) == 0
+        signal = T((-1)^div(k, 4, RoundDown))
+        if mod(k, 2) == 0
             return signal
         else
-            return signal/sqrt(T(2))
+            return signal / sqrt(T(2))
         end
     end
 end
+
 
 function test_basis_dmcv(Nc::Integer, Δs::T, Δ::T) where {T<:AbstractFloat}
     R = [Hermitian(zeros(Complex{T},Nc+1,Nc+1)) for z=0:5]
@@ -79,6 +147,7 @@ function test_basis_dmcv(Nc::Integer, Δs::T, Δ::T) where {T<:AbstractFloat}
     return R
 end
 
+
 function key_basis_dmcv(::Type{T}, Nc::Integer) where {T<:AbstractFloat}
     R = [Hermitian(zeros(Complex{T},Nc+1,Nc+1)) for z=0:3]
     for z = 0:3
@@ -97,12 +166,6 @@ function key_basis_dmcv(::Type{T}, Nc::Integer) where {T<:AbstractFloat}
     return R
 end
 
-@with_kw struct epsilon_coeffs{T<:AbstractFloat}
-    ϵCR::T = 1e-11
-    ϵPA::T = 9e-11
-    ϵPE::T = 9e-11
-    ϵcompPE::T = 9e-11
-end
 
 function gkraus(::Type{T}, Nc::Integer) where {T<:Real}
     sqrtbasis = sqrt.(key_basis_dmcv(T, Nc))
@@ -116,10 +179,10 @@ function zkraus(Nc::Integer)
 end
 
 
-function simulated_probabilities_dmcv(Δs::T, Δ::T, γ::T, D::Integer) where {T<:AbstractFloat}
+function simulated_probabilities_dmcv(Δs::T, Δ::T, γ::T, L::Integer) where {T<:AbstractFloat}
     α_att = T(2)/10
     ξ = T(1)/100
-    η = 10^(-(α_att*D)/10)
+    η = 10^(-(α_att*L)/10)
     p_sim = zeros(T,4,6)
     for x=0:3
         pars = [ξ, η, x, γ]
@@ -138,34 +201,18 @@ function simulated_probabilities_dmcv(Δs::T, Δ::T, γ::T, D::Integer) where {T
     return p_sim
 end
 
-Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
-    (log(1/ϵPE)  + log(1/ϵPA))* α/(α-T(1)) - 2
+
+Finite_corrections(renyiα::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
+    (log(1/ϵPE)  + log(1/ϵPA))* renyiα*inv(renyiα-T(1)) - 2
 
 
-function EC_cost_dmcv(D::Integer, f::T, N::T, pK::T, γ::T, ϵCR::T) where {T<:AbstractFloat}
-    
-    α_att = T(2)/10
-    ξ     = T(1)/100
-    η     = 10^(- α_att*D/10)
-    p_EC  = zeros(T,4,4)               # Conditional probability p(z|x)
 
-    # Calculate p_EC(z|x) = p_EC(z,x)/4
-    for x=0:3
-        pars = [ξ, η, x, γ]
-        for z=0:3
-            bounds        = ([T(0),T(π)*(2*z-1)/4],[T(Inf),T(π)*(2*z+1)/4])
-            p_EC[x+1,z+1] = integrate(bounds,pars)
-        end
-    end 
-    p_EC /= T(π)*(1 + η*ξ/2)
+function EC_cost_dmcv(L::Integer, f::T, N::T, pK::T, γ::T, ϵCR::T) where {T<:AbstractFloat}
+    ξ = T(1)/100
 
-    # Renormalize the distribution
-    p_PS  = sum(p_EC/4)
-    p_EC /= p_PS
-
-    leak = -p_EC[:]'*log2.(p_EC[:])*T(0.25) # Conditional vN entropy
-    leak *= f*pK                            # EC efficiency and pK
-    leak += ceil(log2(1/ϵCR))/N             # Correctness cost
+    leak = hba_dmcv(L,ξ,γ)          # Conditional vN entropy
+    leak *= f*pK                    # EC efficiency and pK
+    leak += ceil(log2(1/ϵCR))/N     # Correctness cost
     return leak
 end
 
@@ -176,32 +223,47 @@ function constraint_probabilities_dmcv(ρ::AbstractMatrix, Nc::Integer, Δs::T, 
     return real(dot.(Ref(ρ),bases_AB))
 end
 
-function conic_dmcv(D::Integer, N::T, pK::T, Nc::Integer, Δs::T, Δ::T, ϵcompPE::T, γ::T, α::T; renyi::Bool = true) where {T<:AbstractFloat}
-    model = GenericModel{T}()
-    R = Complex{T}
 
-    dim_ρAB = 4*(Nc+1)
+function hbe_dmcv_general(
+    L::Integer,
+    N::T,
+    Nc::Integer,
+    pK::T,
+    Δs::T,
+    Δ ::T,
+    ϵcompPE::T,
+    γ::T,
+    renyiα::T;
+    renyi::Bool = true,
+    fast::Bool = true
+) where {T<:AbstractFloat}
+
+
+    dim_ρAB = 4 * (Nc + 1)
+    model   = GenericModel{T}()
 
     # Variables
     @variable(model, ρAB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
     @variable(model, q_K ≥ 0)
     @variable(model, q[1:4,1:6] ≥ 0)
+    @variable(model, h_QKD)
+    @variable(model, h_KL)
 
     # Constraints on the marginal state
     ρA = partial_trace(ρAB, 2, [4, Nc+1])
     @constraint(model, ρA == alice_part(γ)) #this already implies tr(τAB) == 1
 
-    # Constraints on exp vals via KL divergence
-    p_ρAB = (1-pK)*constraint_probabilities_dmcv(ρAB,Nc,Δs,Δ)
-    @variable(model, h_KL)
-    @constraint(model, [h_KL; p_ρAB[:];pK; q[:];q_K] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
-
     # Constraints on probabilities
     @constraint(model, sum(q) + q_K == 1)
 
+    # Constraints on exp vals via KL divergence
+    p_ρAB = (1-pK)*constraint_probabilities_dmcv(ρAB,Nc,Δs,Δ)
+    @constraint(model, [h_KL; p_ρAB[:];pK; q[:];q_K] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
+
+
     # Finite bounds via a Bretagnolle-Huber-Carol estimator
     δ = sqrt((2*25*log(2) - 2*log(ϵcompPE))/N)
-    p_sim = simulated_probabilities_dmcv(Δs, Δ, γ, D)
+    p_sim = simulated_probabilities_dmcv(Δs, Δ, γ, L)
     @constraint(model, [δ; q[:] - (1-pK)*p_sim[:];q_K - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
 
     # Key map
@@ -210,78 +272,140 @@ function conic_dmcv(D::Integer, N::T, pK::T, Nc::Integer, Δs::T, Δ::T, ϵcompP
     Z    = zkraus(Nc)
     Zhat = [Zi*G for Zi in Z]
 
-    permutation = vec(reshape(1:16*(Nc+1),4,4*(Nc+1))')
-    Zhatperm    = [Zi[permutation,:] for Zi in Zhat]
-    S           = G[permutation,:]
-    block_size  = 4*(Nc+1)
-    blocks      = [(i-1)*block_size+1:i*block_size for i=1:4]
-    
-    vec_dim = Cones.svec_length(Complex,dim_ρAB)
-    ρ_vec = svec(ρAB)
 
-    # QKD (Rényi) cone 
-    @variable(model, Ψ)
+    # Reduction for block-diagonal structures
+    permutation = vec(reshape(1:16*(Nc+1), 4, 4 * (Nc + 1))')
+    Zhatperm = [Zi[permutation, :] for Zi ∈ Zhat]
+    S = G[permutation, :]
+    block_size = 4 * (Nc + 1)
+    blocks = [(i-1)*block_size+1:i*block_size for i ∈ 1:4]
+
+    vec_dim = Cones.svec_length(Complex, dim_ρAB)
+    ρAB_vec = svec(ρAB)
+
+    # Conic program
     if renyi
-        @variable(model, h)
-        β = inv(2 - inv(α))
+        @variable(model, u)
+        if fast
+            β = inv(renyiα)
+            @constraint(
+                model,
+                [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks)
+            )
+        else
+            β = inv(2 - inv(renyiα))
+            dim_σAB = size(Zhat[1],2)
+            @variable(model, σAB[1:dim_σAB, 1:dim_σAB], Hermitian)
+            @constraint(model, tr(σAB) == 1)
+            σAB_vec = svec(σAB)
+            @constraint(
+                model,
+                [u; ρAB_vec; σAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + 2vec_dim; S, blocks)
+            )
+        end
         sβ = β < 1 ? -1 : 1
-        @constraint(model, [Ψ; ρ_vec] in EpiRenyiQKDTriCone{T,R}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks))
-        @constraint(model, [h * (β - 1), 1, sβ * Ψ] in MOI.ExponentialCone())
-        @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h)
+        @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
+        @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
     else
         throw("Not implemented yet")
-        # @constraint(model, [Ψ; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhatperm, 1 + vec_dim; blocks))
+        # @constraint(model, [h_QKD; ρAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
     end
 
-    
     # Optimize
-    # @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*h_α) # If q_k fails, use (pK - δ)
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
     optimize!(model)
 
     # Extract results
     if renyi
-        ObjVal = dual_objective_value(model)
+        h_renyi = dual_objective_value(model)
     else
         throw("Not implemented yet")
     end
 
-    return ObjVal
+    return h_renyi
 end
 
 
-function Finite_dmcv(D::Integer, f::T, N::T, pK::T, Nc::Integer, Δs::T, Δ::T; renyi::Bool = false) where {T<:AbstractFloat}
+function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; renyi::Bool = true, fast::Bool = true) where {T<:AbstractFloat}
 
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
 
-    # Pick amplitude for the coherent states
-    γ = D == 20 ? 0.77 : 0.8
+    # Pick the amplitude for the coherent states
+    # γ = L == 20 ? 0.77 : 0.8
+    γ = optimal_amp(f, N, L)
 
     # Calculate EC cost per symbol
-    leak_EC = EC_cost_dmcv(D, f, N, pK, γ, ϵCR)
+    leak_EC = EC_cost_dmcv(L, f, N, pK, γ, ϵCR)
 
-    """ Here I need an optimization wrt α """ 
-    α = D == 20 ? T(1 +1.911e-5) : T(1 +5e-4) # Test value
-    # Total correction
-    correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA)/N
+    # Optimization wrt Renyi parameter α
+    finiteSKR_pars = Finite_pars(ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, renyi, fast)
+    optimize_renyi(renyiα) = -FiniteSKR(renyiα[1], finiteSKR_pars)
 
-    # Conic program
-    h_renyi = conic_dmcv(D, N, pK, Nc, Δs, Δ, ϵcompPE, γ, α ; renyi)
+    renyiα0 =[ T(1 +1e-5)]
 
-    Finite_SKR = h_renyi - correction
-    return Finite_SKR, α, γ, leak_EC
+    α_low = T(1)
+    α_high = T(1.1) # A bit tightened, as our numerical analysis indicates
+    options = Optim.Options(iterations = 100,f_calls_limit = 30)
+    method  = Optim.NelderMead()
+    sol = Optim.optimize(optimize_renyi, α_low, α_high, renyiα0 ,method,options)
+    optimal_renyi = sol.minimizer[1]
+    SKR_Max = -sol.minimum
+
+    # renyiα = T(1 +1e-5)
+
+    # optimal_renyi = T(0)
+    # SKR_Max   = T(0)
+    # stalling  = 0
+    # jj = 0
+
+    
+    # for b ∈ 1:100
+    #     jj += 1
+    #     renyiα += 2e-6
+
+    #     # Total correction
+    #     correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
+
+    #     # Conic program
+    #     h_renyi = hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, renyiα ; renyi, fast)
+
+    #     Finite_SKR = h_renyi - correction
+
+    #     @printf("  Iteration %d, α-1 = %.5e, SKR = %.2e \n", jj, renyiα-1, Finite_SKR)
+
+    #     if Finite_SKR ≤ SKR_Max && SKR_Max > 0
+    #         stalling += 1
+    #         if stalling>2
+    #             @printf("  Optimality reached. SKR: %.2e \n",SKR_Max)
+    #             @printf("  Optimal Renyi - 1: %.5e \n", optimal_renyi-1)
+    #             break
+    #         # No positive secret key - break loop
+    #         end
+    #     elseif mod(jj,20)==0 && SKR_Max ≤ 0
+    #         @warn("WARNING: no positive secret key rate was found \n")
+    #         break
+    #     else
+    #         stalling=0
+    #         SKR_Max = Finite_SKR
+    #         optimal_renyi = renyiα
+    #     end
+    # end
+
+    return SKR_Max, optimal_renyi, γ, leak_EC
 end
 
-# f = 1.0; N = 1e10; pK = 0.73; Nc = 5; Δs = 1.5; Δ = 4.0; T = Float64; D = 20; renyi = true;
+
+f = 1.0; N = 1e10; Nc = 5; Δs = 1.5; Δ = 4.0; T = Float64; L = 20; renyi = true; fast = true;
 function Instance_dmcv(
     f::Real,
     N::Real,
-    pK::Real,
     Nc::Integer;
     Δs::Real = 1.5,
     Δ::Real = 4.0,
+    renyi::Bool = true,
+    fast::Bool = true,
     T::DataType=Float64
     )
 
@@ -293,27 +417,37 @@ function Instance_dmcv(
     # Enforce desired precision
     f = T(f)
     N = T(N)
-    pK = T(pK)
     Δs = T(Δs)
     Δ = T(Δ)
 
     # Create output file
     RATE_DMCV   = "Rate_dmcv_f"*string(Int(floor(f*100)))*"D"*string(Int(floor(Δ*10)))*"d"*string(Int(floor(Δs*10)))*".csv"
     FILE       = open(RATE_DMCV,"a")
-    @printf(FILE_RATE,"xi, f, Nc, N, delta, Delta, nu, eta \n")
-    @printf(FILE_RATE,"0.01, %.2f, %d, %.2f, %.2f, %.2f \n",f,Nc,log10(N),Δs,Δ)
-    @printf(FILE_RATE,"D, amp, pK, a-1, leakEC, SKR \n")
+    @printf(FILE,"xi, f, Nc, N, delta, Delta \n")
+    @printf(FILE,"0.01, %.2f, %d, %.2f, %.2f, %.2f \n",f,Nc,log10(N),Δs,Δ)
+    @printf(FILE,"L, amp, pK, a-1, leakEC, SKR \n")
     close(FILE)
 
     # Start loop for various values of the distance
     # Threads.@threads 
-    for D ∈ 1:5:40
-        @printf("Distance: %d ---------\n",D)
-        Finite_SKR, optimal_α, γ, leak_EC  = Finite_dmcv(D, f, N, pK, Nc, Δs, Δ; renyi = true)
+    for L ∈ 2:2:40
+
+        # Pick the key round probability
+        pK = optimal_pK(f, N, L)
+        
+        @printf("Distance: %d ---------\n",L)
+        Finite_SKR, optimal_renyi, γ, leak_EC  = Finite_dmcv(L, f, N, Nc, pK, Δs, Δ; renyi, fast)
 
         # Record outputs
         FILE = open(RATE_DMCV,"a")
-        @printf(FILE_RATE,"%d, %.2f, %.2f, %.8e, %.12f, %.8e \n",D,γ,pK,optimal_α-T(1),leak_EC,Finite_SKR)
+        @printf(FILE,"%d, %.2f, %.2f, %.8e, %.12f, %.8e \n",L,γ,pK,optimal_renyi-T(1),leak_EC,Finite_SKR)
         close(FILE)
     end
 end
+
+
+
+L = 6; N = 1e10; Nc = 10; pK = 0.9; Δs = 1.5; Δ = 4.0; ϵcompPE = 9e-11; γ = 0.93; T = Float64; renyi = true; renyiα = 1 + T(1e-5);
+
+hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, renyiα ; renyi, fast = true)  # 1.4833097873944991
+hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, renyiα ; renyi, fast = false) # 1.482168772053775
