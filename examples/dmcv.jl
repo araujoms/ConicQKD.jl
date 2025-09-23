@@ -334,29 +334,44 @@ function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; 
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
 
     # Pick the amplitude for the coherent states
-    # γ = L == 20 ? 0.77 : 0.8
-    γ = optimal_amp(f, N, L)
+    γ = optimal_amp(f, L)
 
     # Calculate EC cost per symbol
     leak_EC = EC_cost_dmcv(L, f, N, pK, γ, ϵCR)
 
     # Optimization wrt Renyi parameter α
-    finiteSKR_pars = Finite_pars(ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, renyi, fast)
-    optimize_renyi(renyiα) = -FiniteSKR(renyiα[1], finiteSKR_pars)
+    opt_renyi = T(1) + optimal_renyi(f,N,L)
 
-    renyiα0 =[ T(1 +1e-5)]
+    # If the optimal value for renyiα is known, calculate the SKR
+    if opt_renyi != 1
+        correction = leak_EC + Finite_corrections(opt_renyi, ϵPE, ϵPA)/N
 
-    α_low = T(1)
-    α_high = T(1.1) # A bit tightened, as our numerical analysis indicates
-    options = Optim.Options(iterations = 100,f_calls_limit = 30)
-    method  = Optim.NelderMead()
-    sol = Optim.optimize(optimize_renyi, α_low, α_high, renyiα0 ,method,options)
-    optimal_renyi = sol.minimizer[1]
-    SKR_Max = -sol.minimum
+        # Conic program
+        h_renyi = hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, opt_renyi ; renyi, fast)
+
+        SKR_Max = h_renyi - correction
+
+        @printf("α-1 = %.5e, SKR = %.2e \n", opt_renyi-1, SKR_Max)
+    # Otherwise, optimize with respect to renyiα
+    else
+        finiteSKR_pars = Finite_pars(ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, renyi, fast)
+        optimize_renyi(renyiα) = -FiniteSKR(renyiα[1], finiteSKR_pars)
+
+        # Initial guess
+        renyiα0 =[ T(1 +1e-4)]
+
+        α_low = T(1)
+        α_high = T(1.1) # A bit tightened, as our numerical analysis indicates
+        options = Optim.Options(iterations = 100,f_calls_limit = 30)
+        method  = Optim.NelderMead()
+        sol = Optim.optimize(optimize_renyi, α_low, α_high, renyiα0 ,method,options)
+        opt_renyi = sol.minimizer[1]
+        SKR_Max = -sol.minimum
+    end
 
     # renyiα = T(1 +1e-5)
 
-    # optimal_renyi = T(0)
+    # opt_renyi = T(0)
     # SKR_Max   = T(0)
     # stalling  = 0
     # jj = 0
@@ -380,7 +395,7 @@ function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; 
     #         stalling += 1
     #         if stalling>2
     #             @printf("  Optimality reached. SKR: %.2e \n",SKR_Max)
-    #             @printf("  Optimal Renyi - 1: %.5e \n", optimal_renyi-1)
+    #             @printf("  Optimal Renyi - 1: %.5e \n", opt_renyi-1)
     #             break
     #         # No positive secret key - break loop
     #         end
@@ -390,11 +405,11 @@ function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; 
     #     else
     #         stalling=0
     #         SKR_Max = Finite_SKR
-    #         optimal_renyi = renyiα
+    #         opt_renyi = renyiα
     #     end
     # end
 
-    return SKR_Max, optimal_renyi, γ, leak_EC
+    return SKR_Max, opt_renyi, γ, leak_EC
 end
 
 
@@ -430,18 +445,18 @@ function Instance_dmcv(
     close(FILE)
 
     # Start loop for various values of the distance
-    # Threads.@threads 
-    for L ∈ 2:2:40
+    # Use threads to speed up: Threads.@threads 
+    for L ∈ 1:20
 
         # Pick the key round probability
         pK = optimal_pK(f, N, L)
         
         @printf("Distance: %d ---------\n",L)
-        Finite_SKR, optimal_renyi, γ, leak_EC  = Finite_dmcv(L, f, N, Nc, pK, Δs, Δ; renyi, fast)
+        Finite_SKR, opt_renyi, γ, leak_EC  = Finite_dmcv(L, f, N, Nc, pK, Δs, Δ; renyi, fast)
 
         # Record outputs
         FILE = open(RATE_DMCV,"a")
-        @printf(FILE,"%d, %.2f, %.2f, %.8e, %.12f, %.8e \n",L,γ,pK,optimal_renyi-T(1),leak_EC,Finite_SKR)
+        @printf(FILE,"%d, %.2f, %.2f, %.8e, %.12f, %.8e \n",L,γ,pK,opt_renyi-T(1),leak_EC,Finite_SKR)
         close(FILE)
     end
 end
