@@ -57,11 +57,13 @@ function state(η,v)
 end
 # ----------------------------------------------------- #
 
+"Kraus operator for the pinching map"
 function zkraus(dimB::Integer)
     K = [kron(proj(i, 2), I(dimB-1)) for i ∈ 1:2]
     return K
 end
 
+"Kraus operator for the key map"
 function gkraus(pK::T) where {T<:AbstractFloat}
     G = sqrt(pK)*kron(I(2), [1 0 0; 0 1 0])
     return G
@@ -114,6 +116,14 @@ end
 Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
     (log(1/ϵPE)  + log(1/ϵPA))* α/(α-T(1)) - 2
 
+"Probabilities for key generation"
+function probabilities_generation(v::T, η::T, pK::T) where {T<:AbstractFloat} 
+    ρ = alice_depol_loss(v,η)
+    A = alice_povm(pK)
+    B = bob_povm(pK)
+    expval = [real(tr(ρ*kron(A[i],B[j]))) for i=1:2, j=1:5]
+    return expval
+end
 
 function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
     ρ = alice_depol_loss(v,η)
@@ -158,7 +168,7 @@ function conic_BB84(
     @constraint(model, [h_KL; p_ρAB[:];pK^2; q[:];qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
     
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
-    C_alphbet = 13 # TODO: check
+    C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
     p_sim = simulated_probabilities_bb84(v, η, pK)
     @constraint(model, [δ; q[:] - p_sim[:];qK - pK^2] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
@@ -186,7 +196,7 @@ function conic_BB84(
             @variable(model, σAB[1:d, 1:d], Hermitian)
             @constraint(model, tr(σAB) == 1)
             σAB_vec = svec(σAB)
-            @constraint(model, [Ψ; ρAB_vec;σAB_vec]) in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat,(β, Ghat, Zhat, 1 + length(ρ_vec) + length(σ_vec); blocks))
+            @constraint(model, [Ψ; ρAB_vec;σAB_vec]) in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat,(β, Ghat, Zhat, 1 + 2length(ρ_vec); blocks))
         end
         sβ = β < 1 ? -1 : 1
         @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
@@ -214,9 +224,6 @@ function Finite_bb84(L::Integer, f::T, N::T, pK::T, Nc::Integer, Δs::T, Δ::T; 
 
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
-
-    # Pick amplitude for the coherent states
-    γ = L == 20 ? 0.77 : 0.8
 
     # Calculate EC cost per symbol
     qZ = qberZ(v, η, pK)
