@@ -91,13 +91,23 @@ function ΠAB(pK::T) where {T<:AbstractFloat}
 end
 
 "Leackage"
-function EC_cost_bb84(a::Integer, f::T, N::T, pK::T, ϵCR::T) where {T<:AbstractFloat}
+function EC_cost_bb84(qber::T, f::T, N::T, pK::T, ϵCR::T) where {T<:AbstractFloat}
     # H(A|B) 
-    leak_EC = 1-binary_entropy(a)
+    leak_EC = 1-binary_entropy(qber)
 
     leak_EC *= N*f*pK^2                 # EC efficiency and pK
     leak_EC += ceil(log2(inv(ϵCR)))/N  # Correctness cost
     return leak
+end
+
+"QBER for the Z basis"
+function qberZ(v::T, η::T, pK::T) where {T<:AbstractFloat}
+    A = alice_povm(pK)
+    B = bob_povm(pK)
+    ρ = alice_depol_loss(v,η)
+    p_error = sum([real(tr(kron(A[i],B[j])*ρ)) for i in 1:2, j in 1:2 if i != j])
+    p_click = sum([real(tr(kron(A[i],B[j])*ρ)) for i in 1:2, j in 1:2])
+    return p_error/p_click
 end
 
 "Finite corrections for the final key rate"
@@ -121,7 +131,7 @@ function conic_BB84(
     N      ::T, 
     pK     ::T,
     ϵcompPE::T, 
-    renyiα ::T; 
+    α ::T; 
     renyi  ::Bool = false
     ) where {T<:AbstractFloat}
 
@@ -144,7 +154,7 @@ function conic_BB84(
     @constraint(model, sum(q) + qK == 1)
 
     # Constraints on exp vals via KL divergence
-    p_ρAB = constraint_probabilities_bb84(ρ, pK)
+    p_ρAB = constraint_probabilities_bb84(ρAB, pK)
     @constraint(model, [h_KL; p_ρAB[:];pK^2; q[:];qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
     
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
@@ -155,10 +165,11 @@ function conic_BB84(
 
     # Key map
     G = gkraus(pK)
-    Ghat = I(d) 
+    Ghat =  [I(d)]
     Z = zkraus(dimB)
     Zhat = [Zi*G for Zi in Z]
-    blocks = [(i-1)*d+1:i*d for i ∈ 1:d] # TODO: checkear esto
+
+    blocks = [1:3,3:6] # TODO: checkear esto
 
     vec_dim = Cones.svec_length(Complex, d)
     ρAB_vec = svec(ρAB)
@@ -167,11 +178,11 @@ function conic_BB84(
     if renyi
         @variable(model, Ψ)
         if fast
-            β = inv(renyiα)
+            β = inv(α)
             #TODO:  understand and define S
             @constraint(model, [Ψ; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
         else
-            β = inv(2 - inv(renyiα))
+            β = inv(2 - inv(α))
             @variable(model, σAB[1:d, 1:d], Hermitian)
             @constraint(model, tr(σAB) == 1)
             σAB_vec = svec(σAB)
@@ -179,7 +190,7 @@ function conic_BB84(
         end
         sβ = β < 1 ? -1 : 1
         @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
-        @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
+        @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
     else
         throw("Not implemented yet")
         # @constraint(model, [Ψ; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhatperm, 1 + vec_dim; blocks))
@@ -208,7 +219,8 @@ function Finite_bb84(L::Integer, f::T, N::T, pK::T, Nc::Integer, Δs::T, Δ::T; 
     γ = L == 20 ? 0.77 : 0.8
 
     # Calculate EC cost per symbol
-    leak_EC = EC_cost_bb84(a, f, N, pK, ϵCR)
+    qZ = qberZ(v, η, pK)
+    leak_EC = EC_cost_bb84(qZ, f, N, pK, ϵCR)
 
     """ Here I need an optimization wrt α """ 
     α = L == 20 ? T(1 +1.911e-5) : T(1 +5e-4) # Test value
