@@ -2,15 +2,13 @@ using LinearAlgebra
 using JuMP
 using ConicQKD
 using Ket
+using Optim
 import Hypatia
 import Hypatia.Cones
 import JLD2
 
 using Printf
 using Parameters
-
-dimA = 2
-dimB = 3
 
 
 @with_kw struct epsilon_coeffs{T<:AbstractFloat}
@@ -20,6 +18,14 @@ dimB = 3
     ϵcompPE::T = 9e-11
 end
 
+@with_kw struct Finite_pars{T<:AbstractFloat}
+    L::Integer
+    N::T
+    Nc::Integer
+    pK::T
+    renyi::Bool
+    fast::Bool
+end
 
 "Alice state after depolarization"
 function alice_depol(v,dAL)
@@ -95,11 +101,11 @@ end
 "Leackage"
 function EC_cost_bb84(qber::T, f::T, N::T, pK::T, ϵCR::T) where {T<:AbstractFloat}
     # H(A|B) 
-    leak_EC = 1-binary_entropy(qber)
+    leak_EC = binary_entropy(qber)
 
     leak_EC *= N*f*pK^2                 # EC efficiency and pK
     leak_EC += ceil(log2(inv(ϵCR)))/N  # Correctness cost
-    return leak
+    return leak_EC
 end
 
 "QBER for the Z basis"
@@ -141,8 +147,9 @@ function conic_BB84(
     N      ::T, 
     pK     ::T,
     ϵcompPE::T, 
-    α ::T; 
-    renyi  ::Bool = false
+    α      ::T; 
+    renyi  ::Bool = true,
+    fast   ::Bool = true
     ) where {T<:AbstractFloat}
 
     d = dimA*dimB
@@ -179,7 +186,7 @@ function conic_BB84(
     Z = zkraus(dimB)
     Zhat = [Zi*G for Zi in Z]
 
-    blocks = [1:3,3:6] # TODO: checkear esto
+    blocks = [(i-1)*d+1:i*d for i ∈ 1:d]
 
     vec_dim = Cones.svec_length(Complex, d)
     ρAB_vec = svec(ρAB)
@@ -190,7 +197,7 @@ function conic_BB84(
         if fast
             β = inv(α)
             #TODO:  understand and define S
-            @constraint(model, [Ψ; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+            @constraint(model, [Ψ; ρAB_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
         else
             β = inv(2 - inv(α))
             @variable(model, σAB[1:d, 1:d], Hermitian)
@@ -220,30 +227,50 @@ function conic_BB84(
     return h_renyi 
 end
 
-function Finite_bb84(L::Integer, f::T, N::T, pK::T, Nc::Integer, Δs::T, Δ::T; renyi::Bool = false) where {T<:AbstractFloat}
 
+function FiniteSKR(α, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
+    
+    # unpack pars
+    @unpack L, N, Nc, pK, renyi, fast = finiteSKR_pars
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
 
     # Calculate EC cost per symbol
     qZ = qberZ(v, η, pK)
     leak_EC = EC_cost_bb84(qZ, f, N, pK, ϵCR)
-
-    """ Here I need an optimization wrt α """ 
-    α = L == 20 ? T(1 +1.911e-5) : T(1 +5e-4) # Test value
+    
     # Total correction
     correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA)/N
 
     # Conic program
-    h_renyi = conic_bb84(L, N, pK, Nc, ϵcompPE, γ, α ; renyi)
+    h_renyi = conic_bb84(v,α,N, pK, ϵcompPE )
 
-    Finite_SKR = h_renyi - correction
-    return Finite_SKR, α, γ, leak_EC
+    FiniteSecretKey = h_renyi - correction
+
+    # Some log info
+    @printf("α-1 = %.5e, SKR = %.2e \n", renyiα-1, FiniteSecretKey)
+
+    return FiniteSecretKey
 end
 
-# f = 1.0; N = 1e10; pK = 0.73; Nc = 5; T = Float64; L= 20; renyi = true;
-# v=0.03;η=0.8; 
-function Instance_dmcv(
+function Finite_bb84(L::Integer, N::T, pK::T, Nc::Integer; renyi::Bool = false) where {T<:AbstractFloat}
+
+    # Optimization wrt Renyi parameter α
+    finiteSKR_pars = Finite_pars(L, N, Nc, pK, renyi, fast)
+    optimize_renyi(α) = -FiniteSKR(α[1], finiteSKR_pars)
+
+    α0 = [ T(1 +1e-6)]
+    α_low = T(1); α_high = T(1.1) # A bit tightened, as our numerical analysis indicates
+    options = Optim.Options(iterations = 100,f_calls_limit = 30)
+    method  = Optim.NelderMead()
+    sol = Optim.optimize(optimize_renyi, α_low, α_high, α0 ,method,options)
+    optimal_renyi = sol.minimizer[1]
+    SKR_Max = -sol.minimum
+
+    return SKR_Max, optimal_renyi, leak_EC
+end
+
+function Instance_bb84(
     f::Real,
     N::Real,
     pK::Real,
@@ -261,22 +288,31 @@ function Instance_dmcv(
     pK = T(pK)
 
     # Create output file
-    RATE_BB84   = "Rate_bb84_f"*string(Int(floor(f*100)))*".csv"
-    FILE       = open(RATE_BB84,"a")
-    @printf(FILE_RATE,"xi, f, Nc, N, nu, eta \n")
-    @printf(FILE_RATE,"0.01, %.2f, %d, %.2f, %.2f, %.2f \n",f,Nc,log10(N))
-    @printf(FILE_RATE,"D, amp, pK, a-1, leakEC, SKR \n")
-    close(FILE)
+    RATE_BB84 = "Rate_bb84_Nc"*string(Nc)*".csv"
+    file      = open(RATE_BB84,"a")
+    @printf(file,"xi, f, Nc, N, nu, eta \n")
+    @printf(file,"0.01, %.2f, %d, %.2f, %.2f, %.2f \n",f,Nc,log10(N))
+    @printf(file,"D, pK, a-1, leakEC, SKR \n")
+    close(file)
 
     # Start loop for various values of the distance
     # Threads.@threads 
     for L ∈ vcat(1,5:5:40)
         @printf("Distance: %d ---------\n",L)
-        Finite_SKR, optimal_α, γ, leak_EC  = Finite_dmcv(L, f, N, pK, Nc; renyi = true)
+        Finite_SKR, optimal_α, leak_EC  = Finite_dmcv(L, f, N, pK, Nc; renyi = true)
 
         # Record outputs
-        FILE = open(RATE_BB84,"a")
-        @printf(FILE_RATE,"%d, %.2f, %.2f, %.8e, %.12f, %.8e \n",L,γ,pK,optimal_α-T(1),leak_EC,Finite_SKR)
-        close(FILE)
+        file = open(RATE_BB84,"a")
+        @printf(file,"%d, %.2f, %.2f, %.8e, %.12f, %.8e \n",L,pK,optimal_α-T(1),leak_EC,Finite_SKR)
+        close(file)
     end
 end
+
+
+f = 1.16; N = 1e10; pK = 0.73; Nc = 5; T = Float64; L= 20; renyi = true;fast=true
+v=0.03;η=0.8; 
+dimA = 2
+dimB = 3
+
+
+# Instance_bb84(f,N,pK,Nc;T)
