@@ -1,5 +1,3 @@
-
-
 function optimal_pK(f::Real,N::Real,v::Real)
 
     if f != 1.0
