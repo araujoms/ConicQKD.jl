@@ -74,7 +74,6 @@ mutable struct EpiFastRenyiQKDTri{T<:Real,R<:RealOrComplex{T}} <: Cone{T}
     d2Ψdρ2vec::Vector{T}
     d2Ψdρ2::Matrix{T}
     DhZmeat::Vector{Matrix{R}}
-    ds_g̃_ZGZ::Matrix{T} #TODO check if it's being reused in dder3
     ds_h_Zρ::Vector{Matrix{T}}
 
     ZG::Matrix{R}
@@ -228,7 +227,6 @@ function setup_extra_data!(cone::EpiFastRenyiQKDTri{T,R}) where {T<:Real,R<:Real
     cone.vec = zeros(T, ρ_dim)
     cone.Gvec = zeros(T, Gρ_dim)
     cone.Zvec = [zeros(T, s) for s ∈ Zρ_dim]
-    cone.ds_g̃_ZGZ = zeros(T, Gρ_dim, Gρ_dim)
     cone.ds_h_Zρ = [zeros(T, s, s) for s ∈ Zρ_dim]
     cone.big_ρmat = zeros(T, ρ_dim, ρ_dim)
     cone.big_Gmat = zeros(T, Gρ_dim, Gρ_dim)
@@ -695,7 +693,6 @@ function update_hess(cone::EpiFastRenyiQKDTri)
     blocks = cone.blocks
     S = cone.S
     d2Ψdρ2 = cone.d2Ψdρ2
-    ds_g̃_ZGZ = cone.ds_g̃_ZGZ
     ds_h_Zρ = cone.ds_h_Zρ
     sqrtShZρ = cone.sqrtShZρ
 
@@ -728,8 +725,6 @@ function update_hess(cone::EpiFastRenyiQKDTri)
         copyto!(cone.Zmat3[i], cone.Zρ_fact[i].vectors')
     end
     Zρ_Uadj = cone.Zmat3
-    copyto!(Gmat, U_ZGZ')
-    d_spectral!(ds_g̃_ZGZ, cone.Δ2_g̃_ZGZ, Gmat, Gmat2, Gmat3, cone.rt2)
     d_spectral!.(ds_h_Zρ, cone.Δ2_h_Zρ, Zρ_Uadj, Zmat, Zmat2, Ref(cone.rt2))
     fill!(cone.big_ρGmat, 0)
     if cone.is_S_identity
@@ -747,8 +742,10 @@ function update_hess(cone::EpiFastRenyiQKDTri)
             mul!(cone.big_ρGmat, cone.big_ρGmat2, Hermitian(cone.big_Gmat), true, true)
         end
     end
+    copyto!(Gmat, U_ZGZ')
+    d_spectral!(cone.big_Gmat, cone.Δ2_g̃_ZGZ, Gmat, Gmat2, Gmat3, cone.rt2)
+    mul!(cone.big_ρGmat2, cone.big_ρGmat, cone.big_Gmat)
     symm_kron!(cone.big_Gmat, cone.sqrtShZρ, cone.rt2)
-    mul!(cone.big_ρGmat2, cone.big_ρGmat, ds_g̃_ZGZ)
     mul!(cone.big_ρGmat, cone.big_ρGmat2, Hermitian(cone.big_Gmat))
     mul!(cone.big_ρmat, cone.big_ρGmat, cone.G)
     d2Ψdρ2 .+= cone.big_ρmat

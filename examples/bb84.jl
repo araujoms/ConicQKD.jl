@@ -93,16 +93,23 @@ function hae_bb84_reducedz(qx::T, α::T = T(11) / 10; renyi = false, fast = true
     if renyi
         if fast
             β = inv(α)
-            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim; S = V2'V, blocks = [1:1, 2:2]))
+            @constraint(
+                model,
+                [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim; S = V2'V, blocks = [1:1, 2:2])
+            )
         else
             @variable(model, σ[1:4, 1:4], Symmetric)
             @constraint(model, tr(σ) == 1)
             σ_vec = svec(σ)
             β = inv(2 - inv(α))
-            @constraint(model, [h; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,T}(β, Ghat, Z, 1 + length(ρ_vec) + length(σ_vec); S = V, blocks = [1:2, 3:4]))
+            @constraint(
+                model,
+                [h; ρ_vec; σ_vec] in
+                EpiRenyiQKDTriCone{T,T}(β, Ghat, Z, 1 + length(ρ_vec) + length(σ_vec); S = V, blocks = [1:2, 3:4])
+            )
         end
     else
-        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim, blocks = [1:1, 2:2]))
+        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim; blocks = [1:1, 2:2]))
     end
 
     set_optimizer(model, Hypatia.Optimizer{T})
@@ -132,6 +139,7 @@ function hae_bb84_reducedx(qz::T, α::T = T(11) / 10; renyi = false, fast = true
     Ghat = [I(dim_ρ)]
     Z = zkraus() # Zhat for RenyiQKD cone
     Zhat = [Zi * V for Zi ∈ Z] # Zhat for QKD and FastRenyiQKD cones
+    blocks = [1:2, 3:4]
 
     vec_dim = Cones.svec_length(T, dim_ρ)
     ρ_vec = svec(ρ)
@@ -141,16 +149,20 @@ function hae_bb84_reducedx(qz::T, α::T = T(11) / 10; renyi = false, fast = true
     if renyi
         if fast
             β = inv(α)
-            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim; S = V, blocks = [1:2, 3:4]))
+            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim; S = V, blocks))
         else
             @variable(model, σ[1:4, 1:4], Symmetric)
             @constraint(model, tr(σ) == 1)
             σ_vec = svec(σ)
             β = inv(2 - inv(α))
-            @constraint(model, [h; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,T}(β, Ghat, Z, 1 + length(ρ_vec) + length(σ_vec); S = V, blocks = [1:2, 3:4]))
+            @constraint(
+                model,
+                [h; ρ_vec; σ_vec] in
+                EpiRenyiQKDTriCone{T,T}(β, Ghat, Z, 1 + length(ρ_vec) + length(σ_vec); S = V, blocks)
+            )
         end
     else
-        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim, blocks = [1:2, 3:4]))
+        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim; blocks))
     end
 
     set_optimizer(model, Hypatia.Optimizer{T})
