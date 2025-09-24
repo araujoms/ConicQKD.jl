@@ -296,7 +296,7 @@ function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector
 end
 
 function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vector{T}) where {T<:Real}
-    rteps = cbrt(eps(T))
+    rteps = eps(T)^(2/9)
     d = length(λ)
 
     @inbounds for k ∈ 1:d, j ∈ 1:k, i ∈ 1:j
@@ -322,7 +322,7 @@ function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vect
 end
 
 function Δ4generic!(Δ4::Array{T,4}, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
-    rteps = cbrt(eps(T))
+    rteps = eps(T)^(4/27)
     d = length(λ)
 
     @inbounds for l ∈ 1:d, k ∈ 1:l, j ∈ 1:k, i ∈ 1:j
@@ -359,7 +359,7 @@ function Δ4generic!(Δ4::Array{T,4}, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vec
 end
 
 function Δ4generic_ij!(Δ4_ij::Matrix{T}, i::Int, j::Int, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
-    rteps = cbrt(eps(T))
+    rteps = eps(T)^(4/27)
     d = length(λ)
     λ_i = λ[i]
     λ_j = λ[j]
