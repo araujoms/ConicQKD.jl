@@ -84,8 +84,8 @@ function optimal_renyi(f::Real,N::Real,L::Integer)
                             1.80, 1.00, 1.00, 1.00, 1.00]*1e-5
             return L < length(optimal_renyi) ? optimal_renyi[L+1] : optimal_renyi[end]
     elseif N == 1e9
-        optimal_renyi = [0.95,0.95, 1.00, 1.00, 1.00, 1.63,
-                            1.55, 2.00, 1.80, 2.40, 1.00,
+        optimal_renyi = [0.95, 0.95, 1.00, 1.00, 1.00, 1.63,
+                            1.55, 2.00, 2.00, 2.40, 1.00,
                             2.20, 2.00, 2.45, 2.80, 1.00,
                             23.4, 3.20, 3.20, 4.00, 3.20,
                             3.20, 4.20, 1.38, 3.80, 7.48,

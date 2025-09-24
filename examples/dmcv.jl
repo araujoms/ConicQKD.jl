@@ -318,11 +318,7 @@ function hbe_dmcv_general(
     optimize!(model)
 
     # Extract results
-    if renyi
-        h_renyi = dual_objective_value(model)
-    else
-        throw("Not implemented yet")
-    end
+    h_renyi = dual_objective_value(model)
 
     return h_renyi
 end
@@ -364,12 +360,12 @@ function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; 
         α_high = T(1.1) # A bit tightened, as our numerical analysis indicates
         options = Optim.Options(iterations = 100,f_calls_limit = 30)
         method  = Optim.NelderMead()
-        sol = Optim.optimize(optimize_renyi, α_low, α_high, renyiα0 ,method,options)
+        sol = Optim.optimize(optimize_renyi, α_low, α_high, renyiα0, method, options)
         opt_renyi = sol.minimizer[1]
         SKR_Max = -sol.minimum
     end
 
-    # renyiα = T(1 +1e-5)
+    # renyiα = T(1 +1.48e-3)
 
     # opt_renyi = T(0)
     # SKR_Max   = T(0)
@@ -379,7 +375,7 @@ function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; 
     
     # for b ∈ 1:100
     #     jj += 1
-    #     renyiα += 2e-6
+    #     renyiα += 1e-5
 
     #     # Total correction
     #     correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
@@ -399,7 +395,7 @@ function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; 
     #             break
     #         # No positive secret key - break loop
     #         end
-    #     elseif mod(jj,20)==0 && SKR_Max ≤ 0
+    #     elseif mod(jj,50)==0 && SKR_Max ≤ 0
     #         @warn("WARNING: no positive secret key rate was found \n")
     #         break
     #     else
@@ -446,7 +442,7 @@ function Instance_dmcv(
 
     # Start loop for various values of the distance
     # Use threads to speed up: Threads.@threads 
-    for L ∈ 1:20
+    for L ∈ 1:40
 
         # Pick the key round probability
         pK = optimal_pK(f, N, L)
