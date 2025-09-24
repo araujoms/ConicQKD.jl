@@ -44,7 +44,7 @@ function FiniteSKR(renyiα, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFl
     correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
 
     # Conic program
-    h_renyi = hae_mub_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, renyiα ; renyi, fast)
+    h_renyi = hae_mub_general(v, d, N, pK, n, ϵcompPE, renyiα; renyi, fast)
 
     FiniteSecretKey = h_renyi - correction
 
@@ -72,8 +72,8 @@ function zgkraus(d::Integer)
     return K
 end
 
-Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
-    (log(1/ϵPE)  + log(1/ϵPA))* α/(α-T(1)) - 2
+Finite_corrections(renyiα::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
+    (log(1/ϵPE)  + log(1/ϵPA))* renyiα/(renyiα-T(1)) - 2
 
 function EC_cost_mub(v::T, d::Integer, f::T, N::T, pK::T, ϵCR::T) where {T<:AbstractFloat}
     
@@ -86,22 +86,19 @@ function EC_cost_mub(v::T, d::Integer, f::T, N::T, pK::T, ϵCR::T) where {T<:Abs
     return leak_EC
 end
 
-""" Still have to finish this"""
+
 function simulated_probabilities_mub(v::T,d::Integer,pK::T,n::Integer) where {T<:AbstractFloat}
     
     p2 = ((T(1)-pK)*inv(n-1))^2
     W = v + (1 - v) / d
 
-    """ Start of idea """
     # Basis coincidence
     p_sim = p2 * W * ones(n-1)
 
     # Anything else
-    # p          = [(T(1)-pK)*inv(n-1) for i ∈ 1:n-1]
-    # p_others   = T(1) - pK^2 - (n-1)*p2 # sum(p.*p) + 2*sum(p*pK)
     push!(p_sim, T(1) - pK^2 - (n-1)*p2*W)
-    """ End of idea """
-    return p_sim # [v + (1 - v) / d for i ∈ 1:n, j ∈ 1:n]
+
+    return p_sim
 end
 
 function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, n::Integer; analytical_mub::Bool = false) where {T<: AbstractFloat}
@@ -160,9 +157,22 @@ function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, n::
     return real(dot.(Ref(ρ), b))
 end
 
-function hae_mub_general(v::T, d::Integer, N::T, pK::T, n::Integer, ϵcompPE::T, α::T; renyi::Bool = true, fast::Bool = true) where {T<:AbstractFloat}
+function hae_mub_general(
+    v::T, 
+    d::Integer, 
+    N::T, 
+    pK::T, 
+    n::Integer, 
+    ϵcompPE::T, 
+    renyiα::T; 
+    renyi::Bool = true, 
+    fast::Bool = true
+) where {T<:AbstractFloat}
+    
     is_complex = true
     model = GenericModel{T}()
+    # hermitian_space = Ket._sdp_parameters(is_complex)[3]
+    # R = is_complex ? Complex{T} : T
     if is_complex
         @variable(model, ρ[1:d^2, 1:d^2], Hermitian)
         R = Complex{T}
@@ -172,7 +182,6 @@ function hae_mub_general(v::T, d::Integer, N::T, pK::T, n::Integer, ϵcompPE::T,
     end
 
     # Variables
-    @variable(model, ρAB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
     @variable(model, q_K ≥ 0)
     @variable(model, q[1:n] ≥ 0) 
     @variable(model, h_QKD)
@@ -189,19 +198,13 @@ function hae_mub_general(v::T, d::Integer, N::T, pK::T, n::Integer, ϵcompPE::T,
     # Constraints on probabilities
     @constraint(model, sum(q) + q_K == 1)
 
-
     # Constraints on exp vals via KL divergence
     @constraint(model, [h_KL; p_ρAB[:];pK^2; q[:];q_K] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
-
-
-    ### ONGOING
-    ##########################################
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator
     C_alphbet = length(q[:])+1 # Key (1) + Coincident bases (n-1) + Non-coincident (1)
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
     @constraint(model, [δ; q[:] - p_sim[:];q_K - pK^2] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
-
 
     # Key map
     Ghat = [I(d^2)]
@@ -212,23 +215,32 @@ function hae_mub_general(v::T, d::Integer, N::T, pK::T, n::Integer, ϵcompPE::T,
     ρ_vec = svec(ρ)
     
 
-    # """CAREFUL, I DONT KNOW IF q_K SHALL EVENTUALLY BE REPLACED BY pK^2"""
-    # @objective(model, Min, α*inv(α-T(1))*h_KL + h_α*(pK^2 - δ)) # q_K 
-
-    
-
     # Conic program 
-    @variable(model, Ψ)
     if renyi
-        @variable(model, h)
-        β = inv(2 - inv(α))
-        sβ = β < 1 ? -1 : 1
-        @constraint(model, [Ψ; ρ_vec] in EpiRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
-        @constraint(model, [h * (β - 1), 1, sβ * Ψ] in MOI.ExponentialCone())
-        @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK^2-δ)*inv(log(T(2)))*h)
+        @variable(model, u)
+        if fast
+            β = inv(renyiα)
+            sβ = β < 1 ? -1 : 1
+            @constraint(
+                model,
+                [u; ρ_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + vec_dim; blocks)
+            )
+        else
+            β = inv(2 - inv(renyiα))
+            sβ = β < 1 ? -1 : 1
+            dim_σ = size(Zhat[1],2)
+            @variable(model, σ[1:dim_σ, 1:dim_σ], Hermitian)
+            @constraint(model, tr(σ) == 1)
+            σ_vec = svec(σ)
+            @constraint(
+                model,
+                [u; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + 2vec_dim; blocks)
+            )
+        end
+        @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
+        @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
     else
         throw("Not implemented yet")
-        # @constraint(model, [Ψ; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhatperm, 1 + vec_dim; blocks))
     end
 
     # Optimize
@@ -237,18 +249,14 @@ function hae_mub_general(v::T, d::Integer, N::T, pK::T, n::Integer, ϵcompPE::T,
     optimize!(model)
 
     # Extract results
-    if renyi
-        ObjVal = dual_objective_value(model)
-    else
-        throw("Not implemented yet")
-    end
+    h_renyi = dual_objective_value(model)
 
-    return ObjVal
+    return h_renyi
 end
 
 
-"""STILL NEED TO OPTIMIZE HERE WRT α"""
-function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_mub::Bool = false, renyi::Bool = false) where {T<:AbstractFloat}
+"""STILL NEED TO OPTIMIZE HERE WRT renyiα"""
+function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; renyi::Bool = false) where {T<:AbstractFloat}
 
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
@@ -257,20 +265,20 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_
     leak_EC = EC_cost_mub(v, d, f, N, pK, ϵCR)
     
 
-    """ Here I need an optimization wrt α """ 
+    """ Here I need an optimization wrt renyiα """ 
     # Optimization wrt Renyi parameter α
-    opt_renyi = T(1 +1e-5) #optimal_renyi(f,N,L)
+    opt_renyi = T(1 +1e-5) # optimal_renyi(v,f,N)
          
 
-    if opt_renyi != 0
+    if opt_renyi != 1
         correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
 
         # Conic program
-        h_renyi = hae_mub_general(v, d, N, pK, n, ϵcompPE, α; renyi, fast)
+        h_renyi = hae_mub_general(v, d, N, pK, n, ϵcompPE, opt_renyi; renyi, fast)
 
         SKR_Max = h_renyi - correction
 
-        @printf("α-1 = %.5e, SKR = %.2e \n", opt_renyi-1, SKR_Max)
+        @printf("α-1 = %.5e, SKR = %.2e \n", opt_renyi-T(1), SKR_Max)
 
     # Otherwise, optimize with respect to renyiα
     else
@@ -284,18 +292,11 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_
         α_high = T(1.1) # A bit tightened, as our numerical analysis indicates
         options = Optim.Options(iterations = 100,f_calls_limit = 30)
         method  = Optim.NelderMead()
-        sol = Optim.optimize(optimize_renyi, α_low, α_high, renyiα0 ,method,options)
+        sol = Optim.optimize(optimize_renyi, α_low, α_high, renyiα0, method, options)
         opt_renyi = sol.minimizer[1]
         SKR_Max = -sol.minimum
     end
 
-    # Total correction
-    # correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA)/N
-
-    # Conic program
-    # h_renyi = conic_mub(v, d, N, pK, n, ϵcompPE, α; analytical_mub, renyi)
-
-    # Finite_SKR = h_renyi - correction
     return SKR_Max, opt_renyi, leak_EC
 end
 

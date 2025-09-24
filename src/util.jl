@@ -275,14 +275,14 @@ function applykraus_adj!(result, K, X, temp)
 end
 
 function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector{T}) where {T<:Real}
-    rteps = sqrt(eps(T))
+    rteps = cbrt(eps(T))
     d = length(λ)
 
     @inbounds for j ∈ 1:d
         for i ∈ 1:(j-1)
             λ_ij = λ[i] - λ[j]
             if abs(λ_ij) < rteps
-                Δ2[i, j] = 0.5 * (dfλ[i] + dfλ[j])
+                Δ2[i, j] = (dfλ[i] + dfλ[j]) / 2
             else
                 Δ2[i, j] = (fλ[i] - fλ[j]) / λ_ij
             end
@@ -296,7 +296,7 @@ function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector
 end
 
 function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vector{T}) where {T<:Real}
-    rteps = sqrt(eps(T))
+    rteps = cbrt(eps(T))
     d = length(λ)
 
     @inbounds for k ∈ 1:d, j ∈ 1:k, i ∈ 1:j
@@ -322,7 +322,7 @@ function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vect
 end
 
 function Δ4generic!(Δ4::Array{T,4}, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
-    rteps = sqrt(eps(T))
+    rteps = cbrt(eps(T))
     d = length(λ)
 
     @inbounds for l ∈ 1:d, k ∈ 1:l, j ∈ 1:k, i ∈ 1:j
@@ -359,7 +359,7 @@ function Δ4generic!(Δ4::Array{T,4}, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vec
 end
 
 function Δ4generic_ij!(Δ4_ij::Matrix{T}, i::Int, j::Int, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
-    rteps = sqrt(eps(T))
+    rteps = cbrt(eps(T))
     d = length(λ)
     λ_i = λ[i]
     λ_j = λ[j]
