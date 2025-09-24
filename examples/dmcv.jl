@@ -288,14 +288,12 @@ function hbe_dmcv_general(
         @variable(model, u)
         if fast
             β = inv(renyiα)
-            sβ = β < 1 ? -1 : 1
             @constraint(
                 model,
                 [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks)
             )
         else
             β = inv(2 - inv(renyiα))
-            sβ = β < 1 ? -1 : 1
             dim_σAB = size(Zhat[1],2)
             @variable(model, σAB[1:dim_σAB, 1:dim_σAB], Hermitian)
             @constraint(model, tr(σAB) == 1)
@@ -305,6 +303,7 @@ function hbe_dmcv_general(
                 [u; ρAB_vec; σAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + 2vec_dim; S, blocks)
             )
         end
+        sβ = β < 1 ? -1 : 1
         @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
         @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
     else
