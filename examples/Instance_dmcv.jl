@@ -32,20 +32,19 @@ end
     ϵcompPE::T
     γ::T
     leak_EC::T
-    renyi::Bool
     fast::Bool
 end
 
 function FiniteSKR(renyiα, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
     
     # unpack pars
-    @unpack ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, renyi, fast = finiteSKR_pars
+    @unpack ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, fast = finiteSKR_pars
     
     # Total correction
     correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
 
     # Conic program
-    h_renyi = hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, renyiα ; renyi, fast)
+    h_renyi = hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, renyiα; fast)
 
     FiniteSecretKey = h_renyi - correction
 
@@ -234,7 +233,6 @@ function hbe_dmcv_general(
     ϵcompPE::T,
     γ::T,
     renyiα::T;
-    renyi::Bool = true,
     fast::Bool = true
 ) where {T<:AbstractFloat}
 
@@ -284,32 +282,27 @@ function hbe_dmcv_general(
     ρAB_vec = svec(ρAB)
 
     # Conic program
-    if renyi
-        @variable(model, u)
-        if fast
-            β = inv(renyiα)
-            @constraint(
-                model,
-                [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks)
-            )
-        else
-            β = inv(2 - inv(renyiα))
-            dim_σAB = size(Zhat[1],2)
-            @variable(model, σAB[1:dim_σAB, 1:dim_σAB], Hermitian)
-            @constraint(model, tr(σAB) == 1)
-            σAB_vec = svec(σAB)
-            @constraint(
-                model,
-                [u; ρAB_vec; σAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + 2vec_dim; S, blocks)
-            )
-        end
-        sβ = β < 1 ? -1 : 1
-        @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
-        @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
+    @variable(model, u)
+    if fast
+        β = inv(renyiα)
+        @constraint(
+            model,
+            [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks)
+        )
     else
-        throw("Not implemented yet")
-        # @constraint(model, [h_QKD; ρAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
+        β = inv(2 - inv(renyiα))
+        dim_σAB = size(Zhat[1],2)
+        @variable(model, σAB[1:dim_σAB, 1:dim_σAB], Hermitian)
+        @constraint(model, tr(σAB) == 1)
+        σAB_vec = svec(σAB)
+        @constraint(
+            model,
+            [u; ρAB_vec; σAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + 2vec_dim; S, blocks)
+        )
     end
+    sβ = β < 1 ? -1 : 1
+    @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
+    @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
 
     # Optimize
     set_optimizer(model, Hypatia.Optimizer{T})
@@ -323,7 +316,7 @@ function hbe_dmcv_general(
 end
 
 
-function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; renyi::Bool = true, fast::Bool = true) where {T<:AbstractFloat}
+function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; fast::Bool = true) where {T<:AbstractFloat}
 
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
@@ -342,14 +335,14 @@ function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; 
         correction = leak_EC + Finite_corrections(opt_renyi, ϵPE, ϵPA)/N
 
         # Conic program
-        h_renyi = hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, opt_renyi ; renyi, fast)
+        h_renyi = hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, opt_renyi; fast)
 
         SKR_Max = h_renyi - correction
 
         @printf("α-1 = %.5e, SKR = %.2e \n", opt_renyi-1, SKR_Max)
     # Otherwise, optimize with respect to renyiα
     else
-        finiteSKR_pars = Finite_pars(ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, renyi, fast)
+        finiteSKR_pars = Finite_pars(ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, fast)
         optimize_renyi(renyiα) = -FiniteSKR(renyiα[1], finiteSKR_pars)
 
         # Initial guess
@@ -408,14 +401,13 @@ function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; 
 end
 
 
-f = 1.0; N = 1e10; Nc = 5; Δs = 1.5; Δ = 4.0; T = Float64; L = 20; renyi = true; fast = true;
+f = 1.0; N = 1e10; Nc = 5; Δs = 1.5; Δ = 4.0; T = Float64; L = 20; fast = true;
 function Instance_dmcv(
     f::Real,
     N::Real,
     Nc::Integer;
     Δs::Real = 1.5,
     Δ::Real = 4.0,
-    renyi::Bool = true,
     fast::Bool = true,
     T::DataType=Float64
     )
@@ -447,7 +439,7 @@ function Instance_dmcv(
         pK = optimal_pK(f, N, L)
         
         @printf("Distance: %d ---------\n",L)
-        Finite_SKR, opt_renyi, γ, leak_EC  = Finite_dmcv(L, f, N, Nc, pK, Δs, Δ; renyi, fast)
+        Finite_SKR, opt_renyi, γ, leak_EC  = Finite_dmcv(L, f, N, Nc, pK, Δs, Δ; fast)
 
         # Record outputs
         FILE = open(RATE_DMCV,"a")
