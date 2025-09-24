@@ -22,29 +22,27 @@ end
 @with_kw struct Finite_pars{T<:AbstractFloat}
     ϵPA::T
     ϵPE::T
-    L::Integer
+    v::T
+    d::T
     N::T
-    Nc::Integer
     pK::T
-    Δs::T
-    Δ::T
+    n::T
     ϵcompPE::T
-    γ::T
     leak_EC::T
-    renyi::Bool
+    analytical_mub::Bool
     fast::Bool
 end
 
 function FiniteSKR(renyiα, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
     
     # unpack pars
-    @unpack ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, renyi, fast = finiteSKR_pars
+    @unpack ϵPA, ϵPE, v, d, N, pK, n, ϵcompPE, leak_EC, analytical_mub, fast = finiteSKR_pars
     
     # Total correction
     correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
 
     # Conic program
-    h_renyi = hae_mub_general(v, d, N, pK, n, ϵcompPE, renyiα; renyi, fast)
+    h_renyi = hae_mub_general(v, d, N, pK, n, ϵcompPE, renyiα; analytical_mub, fast)
 
     FiniteSecretKey = h_renyi - correction
 
@@ -165,23 +163,18 @@ function hae_mub_general(
     n::Integer, 
     ϵcompPE::T, 
     renyiα::T; 
-    renyi::Bool = true, 
-    fast::Bool = true
+    analytical_mub::Bool = false, 
+    fast::Bool = false
 ) where {T<:AbstractFloat}
     
     is_complex = true
     model = GenericModel{T}()
-    # hermitian_space = Ket._sdp_parameters(is_complex)[3]
-    # R = is_complex ? Complex{T} : T
-    if is_complex
-        @variable(model, ρ[1:d^2, 1:d^2], Hermitian)
-        R = Complex{T}
-    else
-        @variable(model, ρ[1:d^2, 1:d^2], Symmetric)
-        R = T
-    end
+    hermitian_space = Ket._sdp_parameters(is_complex)[3]
+    R = is_complex ? Complex{T} : T
 
+    
     # Variables
+    @variable(model, ρ[1:d^2, 1:d^2], hermitian_space)
     @variable(model, q_K ≥ 0)
     @variable(model, q[1:n] ≥ 0) 
     @variable(model, h_QKD)
@@ -190,7 +183,7 @@ function hae_mub_general(
 
     # Simulated probabilities
     p_sim = simulated_probabilities_mub(v, d, pK, n)
-    p_ρAB = constraint_probabilities_mub(ρ, d, pK, n)
+    p_ρAB = constraint_probabilities_mub(ρ, d, pK, n; analytical_mub)
     
     # Constraint on states
     @constraint(model, tr(ρ)==T(1))
@@ -216,32 +209,28 @@ function hae_mub_general(
     
 
     # Conic program 
-    if renyi
-        @variable(model, u)
-        if fast
-            β = inv(renyiα)
-            sβ = β < 1 ? -1 : 1
-            @constraint(
-                model,
-                [u; ρ_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + vec_dim; blocks)
-            )
-        else
-            β = inv(2 - inv(renyiα))
-            sβ = β < 1 ? -1 : 1
-            dim_σ = size(Zhat[1],2)
-            @variable(model, σ[1:dim_σ, 1:dim_σ], Hermitian)
-            @constraint(model, tr(σ) == 1)
-            σ_vec = svec(σ)
-            @constraint(
-                model,
-                [u; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + 2vec_dim; blocks)
-            )
-        end
-        @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
-        @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
+    @variable(model, u)
+    if fast
+        β = inv(renyiα)
+        sβ = β < 1 ? -1 : 1
+        @constraint(
+            model,
+            [u; ρ_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + vec_dim; blocks)
+        )
     else
-        throw("Not implemented yet")
+        β = inv(2 - inv(renyiα))
+        sβ = β < 1 ? -1 : 1
+        dim_σ = size(Zhat[1],2)
+        @variable(model, σ[1:dim_σ, 1:dim_σ], Hermitian)
+        @constraint(model, tr(σ) == 1)
+        σ_vec = svec(σ)
+        @constraint(
+            model,
+            [u; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + 2vec_dim; blocks)
+        )
     end
+    @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
+    @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
 
     # Optimize
     set_optimizer(model, Hypatia.Optimizer{T})
@@ -256,7 +245,7 @@ end
 
 
 """STILL NEED TO OPTIMIZE HERE WRT renyiα"""
-function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; renyi::Bool = false) where {T<:AbstractFloat}
+function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_mub::Bool = false, fast::Bool = false) where {T<:AbstractFloat}
 
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
@@ -274,7 +263,7 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; renyi::Bool
         correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
 
         # Conic program
-        h_renyi = hae_mub_general(v, d, N, pK, n, ϵcompPE, opt_renyi; renyi, fast)
+        h_renyi = hae_mub_general(v, d, N, pK, n, ϵcompPE, opt_renyi; analytical_mub, fast)
 
         SKR_Max = h_renyi - correction
 
@@ -282,7 +271,7 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; renyi::Bool
 
     # Otherwise, optimize with respect to renyiα
     else
-        finiteSKR_pars = Finite_pars(ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, renyi, fast)
+        finiteSKR_pars = Finite_pars(ϵPA, ϵPE, v, d, N, pK, n, ϵcompPE, leak_EC, analytical_mub, fast)
         optimize_renyi(renyiα) = -FiniteSKR(renyiα[1], finiteSKR_pars)
 
         # Initial guess
@@ -301,15 +290,15 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; renyi::Bool
 end
 
 
-# d = 5; f = 1.0; N = 1e10; pK = 0.5; n = d + 1; renyi = true; fast = true; T = Float64; # v = T(0.8);
+# d = 5; f = 1.0; N = 1e10; pK = 0.5; n = d + 1;  analytical_mub = true; fast = true; T = Float64; # v = T(0.8);
 function Instance_mub(
     d::Integer, 
     f::Real, 
     N::Real, 
     pK::Real; 
-    n::Integer = d + 1,
-    renyi::Bool = true,
-    fast::Bool = true,
+    n::Integer = d + 1;
+    analytical_mub::Bool = false,
+    fast::Bool = false,
     T::DataType = Float64)
 
     # Enforce desired precision
@@ -329,7 +318,7 @@ function Instance_mub(
     # Threads.@threads 
     for v ∈ 0.1:0.1:1.0
         @printf("visibility: %.2f ---------\n",v)
-        Finite_SKR, opt_renyi, leak_EC = Finite_mub(v, d, f, N, pK, n; renyi, fast)
+        Finite_SKR, opt_renyi, leak_EC = Finite_mub(v, d, f, N, pK, n; analytical_mub, fast)
 
         # Record outputs
         FILE = open(RATE_MUB,"a")
