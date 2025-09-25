@@ -124,7 +124,7 @@ function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, n::
     return real(dot.(Ref(ρ), b))
 end
 
-function conic_mub(v::T, d::Integer, N::T, pK::T, n::Integer, ϵcompPE::T, α::T; analytical_mub::Bool = false, renyi::Bool = false) where {T<:AbstractFloat}
+function conic_mub(v::T, d::Integer, N::T, pK::T, n::Integer, ϵcompPE::T, α::T; analytical_mub::Bool = false, fast::Bool = false) where {T<:AbstractFloat}
     is_complex = true
     model = GenericModel{T}()
     if is_complex
@@ -202,7 +202,7 @@ end
 
 
 """STILL NEED TO OPTIMIZE HERE WRT α"""
-function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_mub::Bool = false, renyi::Bool = false) where {T<:AbstractFloat}
+function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_mub::Bool = false, fast::Bool = false) where {T<:AbstractFloat}
 
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
@@ -217,7 +217,7 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_
     correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA)/N
 
     # Conic program
-    h_renyi = conic_mub(v, d, N, pK, n, ϵcompPE, α; analytical_mub, renyi)
+    h_renyi = conic_mub(v, d, N, pK, n, ϵcompPE, α; analytical_mub, fast)
 
     Finite_SKR = h_renyi - correction
     return Finite_SKR, α, leak_EC
@@ -225,7 +225,15 @@ end
 
 
 # d = 5; f = 1.0; N = 1e10; pK = 0.5; n = d + 1; analytical_mub = false; T = Float64; v = T(0.8);renyi = true;
-function Instance_mub(d::Integer, f::Real, N::Real, pK::Real, n::Integer = d + 1; analytical_mub::Bool = false, T::DataType = Float64)
+function Instance_mub(
+    d::Integer, 
+    f::Real, 
+    N::Real, 
+    pK::Real, 
+    n::Integer = d + 1; 
+    analytical_mub::Bool = false,
+    fast::Bool = true,
+    T::DataType = Float64)
 
     # Enforce desired precision
     f = T(f)
@@ -241,14 +249,14 @@ function Instance_mub(d::Integer, f::Real, N::Real, pK::Real, n::Integer = d + 1
     close(FILE)
 
     # Start loop for various values of the visibility
-    # Threads.@threads 
+    # Use threads for a speedup: Threads.@threads 
     for v ∈ 0.1:0.1:1.0
         @printf("visibility: %.2f ---------\n",v)
-        Finite_SKR, optimal_α, leak_EC = Finite_mub(v, d, f, N, pK, n; analytical_mub, renyi = true)
+        Finite_SKR, opt_renyi, leak_EC = Finite_mub(v, d, f, N, pK, n; analytical_mub, fast)
 
         # Record outputs
         FILE = open(RATE_MUB,"a")
-        @printf(FILE,"%.2f, %.2f, %.6e, %.6f, %.8e \n", v, pK, optimal_α-T(1), leak_EC, Finite_SKR)
+        @printf(FILE,"%.2f, %.2f, %.6e, %.6f, %.8e \n", v, pK, opt_renyi-T(1), leak_EC, Finite_SKR)
         close(FILE)
     end
 end

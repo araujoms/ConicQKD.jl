@@ -172,9 +172,9 @@ function hae_mub_general(
     hermitian_space = Ket._sdp_parameters(is_complex)[3]
     R = is_complex ? Complex{T} : T
 
-    
+
     # Variables
-    @variable(model, ρ[1:d^2, 1:d^2], hermitian_space)
+    @variable(model, ρ[1:d^2, 1:d^2] ∈ hermitian_space)
     @variable(model, q_K ≥ 0)
     @variable(model, q[1:n] ≥ 0) 
     @variable(model, h_QKD)
@@ -260,7 +260,7 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_
          
 
     if opt_renyi != 1
-        correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
+        correction = leak_EC + Finite_corrections(opt_renyi, ϵPE, ϵPA)/N
 
         # Conic program
         h_renyi = hae_mub_general(v, d, N, pK, n, ϵcompPE, opt_renyi; analytical_mub, fast)
@@ -296,7 +296,7 @@ function Instance_mub(
     f::Real, 
     N::Real, 
     pK::Real; 
-    n::Integer = d + 1;
+    n::Integer = d + 1,
     analytical_mub::Bool = false,
     fast::Bool = false,
     T::DataType = Float64)
