@@ -18,7 +18,7 @@ using Parameters
     ϵcompPE::T = 9e-11
 end
 
-@with_kw struct Finite_pars{T<:AbstractFloat}
+@with_kw struct FinitePars{T<:AbstractFloat}
     L::Integer
     N::T
     Nc::Integer
@@ -103,7 +103,7 @@ function EC_cost_bb84(qber::T, f::T, N::T, pK::T, ϵCR::T) where {T<:AbstractFlo
     # H(A|B) 
     leak_EC = binary_entropy(qber)
 
-    leak_EC *= N*f*pK^2                 # EC efficiency and pK
+    leak_EC *= f*pK^2                 # EC efficiency and pK
     leak_EC += ceil(log2(inv(ϵCR)))/N  # Correctness cost
     return leak_EC
 end
@@ -183,27 +183,27 @@ function conic_BB84(
     # Key map
     G = gkraus(pK)
     Ghat =  [I(d)]
-    Z = zkraus(dimB)
+    Z= zkraus(dimB)
     Zhat = [Zi*G for Zi in Z]
 
-    blocks = [(i-1)*d+1:i*d for i ∈ 1:d]
+    blocks = [1:2,3:4]#[(i-1)*d+1:i*d for i ∈ 1:]
 
     vec_dim = Cones.svec_length(Complex, d)
     ρAB_vec = svec(ρAB)
 
     # Conic program
     if renyi
-        @variable(model, Ψ)
+        @variable(model, u)
         if fast
             β = inv(α)
             #TODO:  understand and define S
-            @constraint(model, [Ψ; ρAB_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+            @constraint(model, [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim))
         else
             β = inv(2 - inv(α))
             @variable(model, σAB[1:d, 1:d], Hermitian)
             @constraint(model, tr(σAB) == 1)
             σAB_vec = svec(σAB)
-            @constraint(model, [Ψ; ρAB_vec;σAB_vec]) in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat,(β, Ghat, Zhat, 1 + 2length(ρ_vec); blocks))
+            @constraint(model, [u; ρAB_vec;σAB_vec]) in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + 2length(ρ_vec); blocks)
         end
         sβ = β < 1 ? -1 : 1
         @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
@@ -228,7 +228,7 @@ function conic_BB84(
 end
 
 
-function FiniteSKR(α, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
+function FiniteSKR(α, finiteSKR_pars::FinitePars{T}) where {T<:AbstractFloat}
     
     # unpack pars
     @unpack L, N, Nc, pK, renyi, fast = finiteSKR_pars
@@ -256,7 +256,7 @@ end
 function Finite_bb84(L::Integer, N::T, pK::T, Nc::Integer; renyi::Bool = false) where {T<:AbstractFloat}
 
     # Optimization wrt Renyi parameter α
-    finiteSKR_pars = Finite_pars(L, N, Nc, pK, renyi, fast)
+    finiteSKR_pars = FinitePars(L, N, Nc, pK, renyi, fast)
     optimize_renyi(α) = -FiniteSKR(α[1], finiteSKR_pars)
 
     α0 = [ T(1 +1e-6)]
