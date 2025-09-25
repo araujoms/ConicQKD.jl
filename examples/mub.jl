@@ -8,7 +8,7 @@ import JLD2
 
 using Printf
 using Parameters
-
+import Optim
 
 
 @with_kw struct epsilon_coeffs{T<:AbstractFloat}
@@ -23,10 +23,10 @@ end
     ϵPA::T
     ϵPE::T
     v::T
-    d::T
+    d::Integer
     N::T
     pK::T
-    n::T
+    m::Integer
     ϵcompPE::T
     leak_EC::T
     analytical_mub::Bool
@@ -36,13 +36,13 @@ end
 function FiniteSKR(renyiα, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
     
     # unpack pars
-    @unpack ϵPA, ϵPE, v, d, N, pK, n, ϵcompPE, leak_EC, analytical_mub, fast = finiteSKR_pars
+    @unpack ϵPA, ϵPE, v, d, N, pK, m, ϵcompPE, leak_EC, analytical_mub, fast = finiteSKR_pars
     
     # Total correction
     correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
 
     # Conic program
-    h_renyi = hae_mub_general(v, d, N, pK, n, ϵcompPE, renyiα; analytical_mub, fast)
+    h_renyi = hae_mub_general(v, d, N, pK, m, ϵcompPE, renyiα; analytical_mub, fast)
 
     FiniteSecretKey = h_renyi - correction
 
@@ -58,7 +58,6 @@ function numerical_mubs(d)
     return mub_dict["mubs"][d]
 end
 
-"Decoherence map acting on Alice's key storage"
 function zgmap(rho::AbstractMatrix, d::Integer)
     K = zgkraus(d)
     zgrho = sum(K[i] * rho * K[i] for i ∈ 1:d)
@@ -85,21 +84,21 @@ function EC_cost_mub(v::T, d::Integer, f::T, N::T, pK::T, ϵCR::T) where {T<:Abs
 end
 
 
-function simulated_probabilities_mub(v::T,d::Integer,pK::T,n::Integer) where {T<:AbstractFloat}
+function simulated_probabilities_mub(v::T, d::Integer, pK::T, m::Integer) where {T<:AbstractFloat}
     
-    p2 = ((T(1)-pK)*inv(n-1))^2
+    p2 = ((T(1)-pK)*inv(m-1))^2
     W = v + (1 - v) / d
 
     # Basis coincidence
-    p_sim = p2 * W * ones(n-1)
+    p_sim = p2 * W * ones(m-1)
 
     # Anything else
-    push!(p_sim, T(1) - pK^2 - (n-1)*p2*W)
+    push!(p_sim, T(1) - pK^2 - (m-1)*p2*W)
 
     return p_sim
 end
 
-function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, n::Integer; analytical_mub::Bool = false) where {T<: AbstractFloat}
+function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, m::Integer; analytical_mub::Bool = false) where {T<: AbstractFloat}
     if analytical_mub
         mubs = mub(Complex{T}, d) # analytical MUBs from the package Ket
     else
@@ -111,47 +110,32 @@ function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, n::
 
     # Vector of probabilities for each basis
     p   = [pK]
-    pPE = [(T(1)-pK)*inv(n-1) for i ∈ 1:n-1]
+    pPE = [(T(1)-pK)*inv(m-1) for i ∈ 1:m-1]
     append!(p, pPE)
 
-    """ Start of idea - A&B sum their stats when they measure on the same basis and outcomes coincide"""
     # Probability of basis coincidence
-    p2 = ((T(1)-pK)*inv(n-1))^2
-    b = [zeros(Complex{T}, d^2, d^2) for i ∈ 1:n]
-    for i ∈ 1:n-1, j ∈ 1:d
+    p2 = ((T(1)-pK)*inv(m-1))^2
+    b = [zeros(Complex{T}, d^2, d^2) for i ∈ 1:m]
+    for i ∈ 1:m-1, j ∈ 1:d
         temp = ketbra(mubs[i+1][:, j]) # Note that we skip the first MUB
         b[i] += p2*kron(temp, transpose(temp))
     end
 
-    # Then they sum all other cases (???)
-    for i ∈ 1:n, j ∈ 1:n, k ∈ 1:d, l ∈ 1:d
+    # Then they sum all other cases
+    for i ∈ 1:m, j ∈ 1:m, k ∈ 1:d, l ∈ 1:d
         if i == 1 && j == 1
             continue
-        elseif i == j && k == l # This also discards i == 0 (key)
+        elseif i == j && k == l # This also skips i == 0 (key)
             continue
         end
         tempA = ketbra(mubs[i][:, k])
         tempB = ketbra(mubs[j][:, l])
-        b[n] += p[i]*p[j]*kron(tempA, transpose(tempB))
+        b[m] += p[i]*p[j]*kron(tempA, transpose(tempB))
     end
 
     cleanup!.(b)
     b = Hermitian.(b)
 
-    
-
-    """ End of idea """
-
-    
-
-    # b = [zeros(Complex{T}, d^2, d^2) for i ∈ 1:n-1, j ∈ 1:n-1]
-    # for i ∈ 1:n-1, j ∈ 1:n-1, k ∈ 1:d, l ∈ 1:d
-        # tempA = ketbra(mubs[i][:, k])
-        # tempB = ketbra(mubs[j][:, l])
-        # b[i,j] += p[i]*p[j]*kron(tempA, transpose(tempB))
-    # end
-    # cleanup!.(b)
-    # b = Hermitian.(b)
     return real(dot.(Ref(ρ), b))
 end
 
@@ -160,7 +144,7 @@ function hae_mub_general(
     d::Integer, 
     N::T, 
     pK::T, 
-    n::Integer, 
+    m::Integer, 
     ϵcompPE::T, 
     renyiα::T; 
     analytical_mub::Bool = false, 
@@ -176,14 +160,14 @@ function hae_mub_general(
     # Variables
     @variable(model, ρ[1:d^2, 1:d^2] ∈ hermitian_space)
     @variable(model, q_K ≥ 0)
-    @variable(model, q[1:n] ≥ 0) 
+    @variable(model, q[1:m] ≥ 0) 
     @variable(model, h_QKD)
     @variable(model, h_KL)
 
 
     # Simulated probabilities
-    p_sim = simulated_probabilities_mub(v, d, pK, n)
-    p_ρAB = constraint_probabilities_mub(ρ, d, pK, n; analytical_mub)
+    p_sim = simulated_probabilities_mub(v, d, pK, m)
+    p_ρAB = constraint_probabilities_mub(ρ, d, pK, m; analytical_mub)
     
     # Constraint on states
     @constraint(model, tr(ρ)==T(1))
@@ -195,7 +179,7 @@ function hae_mub_general(
     @constraint(model, [h_KL; p_ρAB[:];pK^2; q[:];q_K] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator
-    C_alphbet = length(q[:])+1 # Key (1) + Coincident bases (n-1) + Non-coincident (1)
+    C_alphbet = length(q[:])+1 # Key (1) + Coincident bases (m-1) + Non-coincident (1)
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
     @constraint(model, [δ; q[:] - p_sim[:];q_K - pK^2] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
 
@@ -244,8 +228,7 @@ function hae_mub_general(
 end
 
 
-"""STILL NEED TO OPTIMIZE HERE WRT renyiα"""
-function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_mub::Bool = false, fast::Bool = false) where {T<:AbstractFloat}
+function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, m::Integer; analytical_mub::Bool = false, fast::Bool = false) where {T<:AbstractFloat}
 
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
@@ -254,7 +237,6 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_
     leak_EC = EC_cost_mub(v, d, f, N, pK, ϵCR)
     
 
-    """ Here I need an optimization wrt renyiα """ 
     # Optimization wrt Renyi parameter α
     opt_renyi = T(1 +1e-5) # optimal_renyi(v,f,N)
          
@@ -263,7 +245,7 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_
         correction = leak_EC + Finite_corrections(opt_renyi, ϵPE, ϵPA)/N
 
         # Conic program
-        h_renyi = hae_mub_general(v, d, N, pK, n, ϵcompPE, opt_renyi; analytical_mub, fast)
+        h_renyi = hae_mub_general(v, d, N, pK, m, ϵcompPE, opt_renyi; analytical_mub, fast)
 
         SKR_Max = h_renyi - correction
 
@@ -271,7 +253,7 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_
 
     # Otherwise, optimize with respect to renyiα
     else
-        finiteSKR_pars = Finite_pars(ϵPA, ϵPE, v, d, N, pK, n, ϵcompPE, leak_EC, analytical_mub, fast)
+        finiteSKR_pars = Finite_pars(ϵPA, ϵPE, v, d, N, pK, m, ϵcompPE, leak_EC, analytical_mub, fast)
         optimize_renyi(renyiα) = -FiniteSKR(renyiα[1], finiteSKR_pars)
 
         # Initial guess
@@ -290,13 +272,13 @@ function Finite_mub(v::T, d::Integer, f::T, N::T, pK::T, n::Integer; analytical_
 end
 
 
-# d = 5; f = 1.0; N = 1e10; pK = 0.5; n = d + 1;  analytical_mub = true; fast = true; T = Float64; # v = T(0.8);
+# d = 5; f = 1.0; N = 1e10; pK = 0.5; m = d + 1; v = 0.9;  analytical_mub = true; fast = true; T = Float64; # v = T(0.8);
 function Instance_mub(
     d::Integer, 
     f::Real, 
     N::Real, 
     pK::Real; 
-    n::Integer = d + 1,
+    m::Integer = d + 1,
     analytical_mub::Bool = false,
     fast::Bool = false,
     T::DataType = Float64)
@@ -309,16 +291,16 @@ function Instance_mub(
     # Create output file
     RATE_MUB   = "Rate_mub_f"*string(Int(floor(f*100)))*"_d"*string(d)*".csv"
     FILE       = open(RATE_MUB,"a")
-    @printf(FILE,"d, f, N, n \n")
-    @printf(FILE,"%d, %.2f, %.2f, %d \n",d,f,log10(N),n)
+    @printf(FILE,"d, f, N, m \n")
+    @printf(FILE,"%d, %.2f, %.2f, %d \n",d,f,log10(N),m)
     @printf(FILE,"v, pK, a-1, leakEC, SKR \n")
     close(FILE)
 
     # Start loop for various values of the visibility
     # Threads.@threads 
-    for v ∈ 0.1:0.1:1.0
+    for v ∈ 0.85:0.01:1.0
         @printf("visibility: %.2f ---------\n",v)
-        Finite_SKR, opt_renyi, leak_EC = Finite_mub(v, d, f, N, pK, n; analytical_mub, fast)
+        Finite_SKR, opt_renyi, leak_EC = Finite_mub(v, d, f, N, pK, m; analytical_mub, fast)
 
         # Record outputs
         FILE = open(RATE_MUB,"a")
