@@ -124,27 +124,34 @@ end
 Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
     (log(1/ϵPE)  + log(1/ϵPA))* α/(α-T(1)) - 2
 
-"Probabilities for key generation and parameter estimation"
-function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
+# "Probabilities for key generation and parameter estimation"
+# function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
+#     ρ = alice_depol_loss(v,η)
+#     A = alice_povm(pK)
+#     B = bob_povm(pK)
+#     gen  = [real(tr(ρ*kron(a,b))) for a=A[1:2], b=B[1:5]]
+#     test = [real(tr(ρ*kron(a,b))) for a=A[3:4], b=B[1:5]]
+#     return gen,test
+# end
+
+function prob_noclick()
     ρ = alice_depol_loss(v,η)
     A = alice_povm(pK)
     B = bob_povm(pK)
-    gen  = [real(tr(ρ*kron(a,b))) for a=A[1:2], b=B[1:5]]
-    test = [real(tr(ρ*kron(a,b))) for a=A[3:4], b=B[1:5]]
-    return gen,test
+    expval = [real(tr(ρ*kron(a,B[5]))) for a=A[1:2]]
 end
 
-# function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
-#     ρ = alice_depol_loss(v,η)
-#     expval = [real(tr(ρ*ΠAB(pK)[i])) for i=1:size(ΠAB(pK),1)]
-#     return expval
-# end
+function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
+    ρ = alice_depol_loss(v,η)
+    expval = [real(tr(ρ*ΠAB(pK)[i])) for i=1:size(ΠAB(pK),1)]
+    return expval
+end
 
 function constraint_probabilities_bb84(ρ::AbstractMatrix, pK::T) where {T<:AbstractFloat}
-    A = alice_povm(pK)
-    B = bob_povm(pK)
-    test = vec([kron(A[i],B[j]) for i=3:4, j=1:5])
-    return real(dot.(Ref(ρ),test))
+    # A = alice_povm(pK)
+    # B = bob_povm(pK)
+    # test = vec([kron(A[i],B[j]) for i=3:4, j=1:5])
+    return real(dot.(Ref(ρ),ΠAB(pK)))
 end
 
 
@@ -165,8 +172,8 @@ function conic_bb84(
     
     # Variables
     @variable(model, ρAB[1:d, 1:d], Hermitian)
-    @variable(model, qK ≥ 0)
-    @variable(model, q[1:10] ≥ 0) 
+    # @variable(model, qK ≥ 0)
+    @variable(model, q[1:20] ≥ 0) 
     @variable(model, h_QKD)
     @variable(model, h_KL)
 
@@ -177,17 +184,18 @@ function conic_bb84(
     # @constraint(model, tr(ρAB)==T(1))
 
     # Constraints on probabilities
-    @constraint(model, sum(q) + qK == 1)
+    tol = 1e-7
+    @constraint(model, abs(sum(q)) <= 1 + tol)
 
     # Constraints on exp vals via KL divergence
     p_ρAB = constraint_probabilities_bb84(ρAB, pK)
-    @constraint(model, [h_KL; p_ρAB[:];pK; q[:];qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
+    @constraint(model, [h_KL; p_ρAB[:]; q[:]] in Hypatia.EpiRelEntropyCone{T}(1+2*length(q[:]),false))
     
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
-    p_sim = vec(simulated_probabilities_bb84(v, η, pK)[2])
-    @constraint(model, [δ; q[:] - p_sim[:];qK - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
+    p_sim = simulated_probabilities_bb84(v, η, pK)
+    @constraint(model, [δ; q[:] - p_sim[:]] in Hypatia.EpiNormInfCone{T,T}(1+length(q[:]),true))
 
     # Key map
     G = gkraus(pK)
