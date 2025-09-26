@@ -184,8 +184,7 @@ function conic_bb84(
     # @constraint(model, tr(ρAB)==T(1))
 
     # Constraints on probabilities
-    tol = 1e-7
-    @constraint(model, abs(sum(q)) <= 1 + tol)
+    @constraint(model, sum(q) == 1 )
 
     # Constraints on exp vals via KL divergence
     p_ρAB = constraint_probabilities_bb84(ρAB, pK)
