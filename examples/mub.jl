@@ -214,7 +214,7 @@ function hae_mub_general(
         )
     end
     @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
-    @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
+    @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK^2 - δ)*inv(log(T(2)))*h_QKD)
 
     # Optimize
     set_optimizer(model, Hypatia.Optimizer{T})
