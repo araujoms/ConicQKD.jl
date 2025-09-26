@@ -124,32 +124,29 @@ end
 Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
     (log(1/ϵPE)  + log(1/ϵPA))* α/(α-T(1)) - 2
 
-"Probabilities for key generation"
-function probabilities_generation(v::T, η::T, pK::T) where {T<:AbstractFloat} 
+"Probabilities for key generation and parameter estimation"
+function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
     ρ = alice_depol_loss(v,η)
     A = alice_povm(pK)
     B = bob_povm(pK)
-    expval = [real(tr(ρ*kron(A[i],B[j]))) for i=1:2, j=1:5]
-    return expval
+    gen  = [real(tr(ρ*kron(a,b))) for a=A[1:2], b=B[1:5]]
+    test = [real(tr(ρ*kron(a,b))) for a=A[3:4], b=B[1:5]]
+    return gen,test
 end
 
-function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
-    ρ = alice_depol_loss(v,η)
-    expval = [real(tr(ρ*ΠAB(pK)[i])) for i=1:size(ΠAB(pK),1)]
-    return expval
-end
+# function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
+#     ρ = alice_depol_loss(v,η)
+#     expval = [real(tr(ρ*ΠAB(pK)[i])) for i=1:size(ΠAB(pK),1)]
+#     return expval
+# end
 
 function constraint_probabilities_bb84(ρ::AbstractMatrix, pK::T) where {T<:AbstractFloat}
-    return real(dot.(Ref(ρ),ΠAB(pK)))
+    A = alice_povm(pK)
+    B = bob_povm(pK)
+    test = vec([kron(A[i],B[j]) for i=3:4, j=1:5])
+    return real(dot.(Ref(ρ),test))
 end
 
-function assert_no_nan_inf(x, name)
-    if any(isnan, x)
-        throw(ErrorException("$name contains NaN"))
-    elseif any(isinf, x)
-        throw(ErrorException("$name contains Inf"))
-    end
-end
 
 function conic_bb84(
     v      ::T, 
@@ -169,7 +166,7 @@ function conic_bb84(
     # Variables
     @variable(model, ρAB[1:d, 1:d], Hermitian)
     @variable(model, qK ≥ 0)
-    @variable(model, q[1:length(ΠAB(pK))] ≥ 0) 
+    @variable(model, q[1:10] ≥ 0) 
     @variable(model, h_QKD)
     @variable(model, h_KL)
 
@@ -189,7 +186,7 @@ function conic_bb84(
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
-    p_sim = simulated_probabilities_bb84(v, η, pK)
+    p_sim = vec(simulated_probabilities_bb84(v, η, pK)[2])
     @constraint(model, [δ; q[:] - p_sim[:];qK - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
 
     # Key map
@@ -202,10 +199,6 @@ function conic_bb84(
 
     vec_dim = Cones.svec_length(Complex, d)
     ρAB_vec = svec(ρAB)
-
-    if !isfinite(α) || α == 0
-        throw(ErrorException("α invalid: $α"))
-    end
 
     # Conic program
     # if renyi
@@ -226,7 +219,7 @@ function conic_bb84(
     # end
     sβ = β < 1 ? -1 : 1
     @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
-    @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK^2-δ)*inv(log(T(2)))*h_QKD)
+    @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
     # else
     #     throw("Not implemented yet")
     #     # @constraint(model, [Ψ; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhatperm, 1 + vec_dim; blocks))
@@ -336,7 +329,6 @@ function Instance_bb84(
     close(file)
 
     # Start loop for various values of the distance
-    # Threads.@threads 
     for L ∈ vcat(1,5:5:40)
         @printf("Distance: %d ---------\n",L)
         Finite_SKR, optimal_α, leak_EC  = Finite_bb84(L, N, pK; renyi = true, fast =true)
@@ -350,7 +342,10 @@ end
 
 
 f = 1.; N = 1e11; pK = 0.95; T = Float64; L= 20; 
-v=0.03;
-dimA = 2; dimB = 3
+v=0.03; dimA = 2; dimB = 3
+
+# @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
+# η=10^(-0.02*L)
+# α =  T(1 +1e-4)
 
 Instance_bb84(f,N,pK,v;T)
