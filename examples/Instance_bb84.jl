@@ -176,6 +176,7 @@ function conic_bb84(
     # Constraints on the marginal state
     ρA = partial_trace(ρAB, 2, [2, 3])
     @constraint(model, ρA == partial_trace(alice_depol_loss(v,η), 2, [2, 3]))
+    # @constraint(model, ρA == I(2)/2) # XXX TODO revisar que esto no implica reduccion facial
     # @constraint(model, tr(ρAB)==T(1))
 
     # Constraints on probabilities
@@ -225,7 +226,7 @@ function conic_bb84(
     # end
     sβ = β < 1 ? -1 : 1
     @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
-    @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
+    @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK^2-δ)*inv(log(T(2)))*h_QKD)
     # else
     #     throw("Not implemented yet")
     #     # @constraint(model, [Ψ; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhatperm, 1 + vec_dim; blocks))
