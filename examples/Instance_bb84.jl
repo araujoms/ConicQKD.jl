@@ -66,16 +66,20 @@ end
 # ----------------------------------------------------- #
 
 "Kraus operator for the pinching map"
-function zkraus(dimB::Integer)
-    K = [kron(proj(i, 2), I(dimB-1)) for i ∈ 1:2]
+function zkraus(dimA::Integer,dimB::Integer)
+    K = [kron(proj(i, 2), I(dimA*dimB)) for i ∈ 1:2]
     return K
 end
 
 "Kraus operator for the key map"
 function gkraus(pK::T) where {T<:AbstractFloat}
-    G = sqrt(pK)*kron(I(2), [1 0 0; 0 1 0])
-    return G
-end
+    PA = sqrt.(alice_povm(pK)[1:2])
+    QB_Zperp = sqrt(bob_povm(pK)[5])
+    QB_Z = sqrt.(bob_povm(pK)[1:2])
+    G1 = [kron(kron(ket(s,dimA), PA[s]), QB_Z[s]) for s =1:2]
+    G2 = kron(kron(ket(1,dimA),sum(PA)),QB_Zperp)
+    return G1[1] + G1[2] + G2
+end   
 
 "Alice's measurements"
 function alice_povm(pK::T) where {T<:AbstractFloat}
@@ -88,11 +92,11 @@ end
 function bob_povm(pK::T) where {T<:AbstractFloat}
     QX =(1-pK)/2 .*[[1 1 0; 1 1 0; 0 0 0],[1 -1 0; -1 1 0; 0 0 0]]
     QZ = pK.*[[1 0 0;0 0 0;0 0 0],[0 0 0; 0 1 0; 0 0 0]]
-    Q = [proj(3,3)]
+    Q = [pK*proj(3,3), (1-pK)*proj(3,3)]
     return vcat(QZ,QX,Q)
 end
 
-"Full Alice's and Bob's POVM for click events"
+"Full Alice's and Bob's POVM"
 function ΠAB_click(pK::T) where {T<:AbstractFloat}
     A = alice_povm(pK)
     B = bob_povm(pK)
@@ -151,7 +155,8 @@ function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloa
 end
 
 function constraint_probabilities_bb84(ρ::AbstractMatrix, pK::T) where {T<:AbstractFloat}
-    return real(dot.(Ref(ρ),ΠAB(pK)[11:20]))
+    n = size(ΠAB(pK),1)
+    return real(dot.(Ref(ρ),ΠAB(pK)[Int(n/2 + 1):n]))
 end
 
 
@@ -166,7 +171,7 @@ function conic_bb84(
     fast   ::Bool = true
     ) where {T<:AbstractFloat}
 
-    d = dimA*dimB
+    d = dimA*dimB ; n = size(ΠAB(pK),1)
 
     model = GenericModel{T}()
     
@@ -174,7 +179,7 @@ function conic_bb84(
     @variable(model, ρAB[1:d, 1:d], Hermitian)
     @variable(model, qK ≥ 0)
     @variable(model, qK_noclick ≥ 0)
-    @variable(model, q[1:10] ≥ 0) 
+    @variable(model, q[1:Int(n/2)] ≥ 0) 
     @variable(model, h_QKD)
     @variable(model, h_KL)
 
@@ -200,7 +205,7 @@ function conic_bb84(
     # Key map
     G = gkraus(pK)
     Ghat =  [I(d)]
-    Z= zkraus(dimB)
+    Z= zkraus(dimA,dimB)
     Zhat = [Zi*G for Zi in Z]
 
     blocks = [1:2,3:4]#[(i-1)*d+1:i*d for i ∈ 1:]
@@ -251,7 +256,6 @@ function FiniteSKR(α, finiteSKR_pars::FinitePars{T}) where {T<:AbstractFloat}
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
 
-    
     # Total correction
     correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA)/N
 
