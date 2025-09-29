@@ -92,8 +92,8 @@ function bob_povm(pK::T) where {T<:AbstractFloat}
     return vcat(QZ,QX,Q)
 end
 
-"Full Alice's and Bob's POVM"
-function ΠAB(pK::T) where {T<:AbstractFloat}
+"Full Alice's and Bob's POVM for click events"
+function ΠAB_click(pK::T) where {T<:AbstractFloat}
     A = alice_povm(pK)
     B = bob_povm(pK)
     povm = [kron(a,b) for a in A for b in B]
@@ -134,24 +134,24 @@ Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
 #     return gen,test
 # end
 
-function prob_noclick()
+"Probablity that there is no click"
+function prob_noclick(v,η, pK)
     ρ = alice_depol_loss(v,η)
     A = alice_povm(pK)
     B = bob_povm(pK)
     expval = [real(tr(ρ*kron(a,B[5]))) for a=A[1:2]]
+    return sum(expval)
 end
 
 function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
     ρ = alice_depol_loss(v,η)
-    expval = [real(tr(ρ*ΠAB(pK)[i])) for i=1:size(ΠAB(pK),1)]
+    n = size(ΠAB(pK),1)
+    expval = [real(tr(ρ*ΠAB(pK)[i])) for i=Int(n/2 + 1):n]
     return expval
 end
 
 function constraint_probabilities_bb84(ρ::AbstractMatrix, pK::T) where {T<:AbstractFloat}
-    # A = alice_povm(pK)
-    # B = bob_povm(pK)
-    # test = vec([kron(A[i],B[j]) for i=3:4, j=1:5])
-    return real(dot.(Ref(ρ),ΠAB(pK)))
+    return real(dot.(Ref(ρ),ΠAB(pK)[11:20]))
 end
 
 
@@ -172,8 +172,9 @@ function conic_bb84(
     
     # Variables
     @variable(model, ρAB[1:d, 1:d], Hermitian)
-    # @variable(model, qK ≥ 0)
-    @variable(model, q[1:20] ≥ 0) 
+    @variable(model, qK ≥ 0)
+    @variable(model, qK_noclick ≥ 0)
+    @variable(model, q[1:10] ≥ 0) 
     @variable(model, h_QKD)
     @variable(model, h_KL)
 
@@ -184,17 +185,17 @@ function conic_bb84(
     # @constraint(model, tr(ρAB)==T(1))
 
     # Constraints on probabilities
-    @constraint(model, sum(q) == 1 )
+    @constraint(model, sum(q) + qK + qK_noclick == 1 )
 
     # Constraints on exp vals via KL divergence
     p_ρAB = constraint_probabilities_bb84(ρAB, pK)
-    @constraint(model, [h_KL; p_ρAB[:]; q[:]] in Hypatia.EpiRelEntropyCone{T}(1+2*length(q[:]),false))
+    @constraint(model, [h_KL; p_ρAB[:];η*pK;(1-η)*pK;q[:]; qK; qK_noclick] in Hypatia.EpiRelEntropyCone{T}(1+4+2*length(q[:]),false))
     
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
     p_sim = simulated_probabilities_bb84(v, η, pK)
-    @constraint(model, [δ; q[:] - p_sim[:]] in Hypatia.EpiNormInfCone{T,T}(1+length(q[:]),true))
+    @constraint(model, [δ; q[:] - p_sim[:];qK - η*pK; qK_noclick - (1-η)*pK] in Hypatia.EpiNormInfCone{T,T}(1+2+length(q[:]),true))
 
     # Key map
     G = gkraus(pK)
