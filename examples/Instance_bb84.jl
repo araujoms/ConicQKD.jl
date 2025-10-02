@@ -65,22 +65,6 @@ function state(η,v)
 end
 # ----------------------------------------------------- #
 
-"Kraus operator for the pinching map"
-function zkraus(dimA::Integer,dimB::Integer)
-    K = [kron(proj(i, 2), I(dimA*dimB)) for i ∈ 1:2]
-    return K
-end
-
-"Kraus operator for the key map"
-function gkraus(pK::T) where {T<:AbstractFloat}
-    PA = sqrt.(alice_povm(pK)[1:2])
-    QB_Zperp = sqrt(bob_povm(pK)[5])
-    QB_Z = sqrt.(bob_povm(pK)[1:2])
-    G1 = [kron(kron(ket(s,dimA), PA[s]), QB_Z[s]) for s =1:2]
-    G2 = kron(kron(ket(1,dimA),sum(PA)),QB_Zperp)
-    return G1[1] + G1[2] + G2
-end   
-
 "Alice's measurements"
 function alice_povm(pK::T) where {T<:AbstractFloat}
     PZ = pK*[proj(1,2), proj(2,2)]
@@ -90,19 +74,35 @@ end
 
 "Bob's measurements"
 function bob_povm(pK::T) where {T<:AbstractFloat}
-    QX =(1-pK)/2 .*[[1 1 0; 1 1 0; 0 0 0],[1 -1 0; -1 1 0; 0 0 0]]
     QZ = pK.*[[1 0 0;0 0 0;0 0 0],[0 0 0; 0 1 0; 0 0 0]]
+    QX =(1-pK)/2 .*[[1 1 0; 1 1 0; 0 0 0],[1 -1 0; -1 1 0; 0 0 0]]
     Q = [pK*proj(3,3), (1-pK)*proj(3,3)]
     return vcat(QZ,QX,Q)
 end
 
 "Full Alice's and Bob's POVM"
-function ΠAB_click(pK::T) where {T<:AbstractFloat}
+function ΠAB(pK::T) where {T<:AbstractFloat}
     A = alice_povm(pK)
     B = bob_povm(pK)
     povm = [kron(a,b) for a in A for b in B]
     return povm
 end
+
+"Kraus operator for the pinching map"
+function zkraus(dimA::Integer,dimB::Integer)
+    K = [kron(proj(i, 2), I(dimA*dimB)) for i ∈ 1:2]
+    return K
+end
+
+"Kraus operator for the key map"
+function gkraus(pK::T) where {T<:AbstractFloat}
+    PA = sqrt.(alice_povm(pK)[1:2])
+    QB_Z = [1 0 0;0 1 0;0 0 0]
+    QB_perp = [0 0 0;0 0 0;0 0 1]
+    G1 = [kron(kron(ket(s), PA[s]),QB_Z) for s=1:2]
+    G2 = kron(kron(ket(1),sqrt(pK)*I(2)),QB_perp) 
+    return  G2 +G1[1] + G1[2]
+end   
 
 "Leackage"
 function EC_cost_bb84(qber::T,η::T, f::T, N::T, pK::T, ϵCR::T) where {T<:AbstractFloat}
@@ -138,14 +138,14 @@ Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
 #     return gen,test
 # end
 
-"Probablity that there is no click"
-function prob_noclick(v,η, pK)
-    ρ = alice_depol_loss(v,η)
-    A = alice_povm(pK)
-    B = bob_povm(pK)
-    expval = [real(tr(ρ*kron(a,B[5]))) for a=A[1:2]]
-    return sum(expval)
-end
+# "Probablity that there is no click"
+# function prob_noclick(v,η, pK)
+#     ρ = alice_depol_loss(v,η)
+#     A = alice_povm(pK)
+#     B = bob_povm(pK)
+#     expval = [real(tr(ρ*kron(a,B[5]/pK))) for a=A[1:2] ]
+#     return sum(expval)
+# end
 
 function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
     ρ = alice_depol_loss(v,η)
@@ -178,7 +178,7 @@ function conic_bb84(
     # Variables
     @variable(model, ρAB[1:d, 1:d], Hermitian)
     @variable(model, qK ≥ 0)
-    @variable(model, qK_noclick ≥ 0)
+    # @variable(model, qK_noclick ≥ 0)
     @variable(model, q[1:Int(n/2)] ≥ 0) 
     @variable(model, h_QKD)
     @variable(model, h_KL)
@@ -190,17 +190,19 @@ function conic_bb84(
     # @constraint(model, tr(ρAB)==T(1))
 
     # Constraints on probabilities
-    @constraint(model, sum(q) + qK + qK_noclick == 1 )
+    @constraint(model, sum(q) + qK == 1 )
 
     # Constraints on exp vals via KL divergence
     p_ρAB = constraint_probabilities_bb84(ρAB, pK)
-    @constraint(model, [h_KL; p_ρAB[:];η*pK;(1-η)*pK;q[:]; qK; qK_noclick] in Hypatia.EpiRelEntropyCone{T}(1+4+2*length(q[:]),false))
-    
+    # @constraint(model, [h_KL; p_ρAB[:];η*pK;(1-η)*pK;q[:]; qK; qK_noclick] in Hypatia.EpiRelEntropyCone{T}(1+4+2*length(q[:]),false))
+    @constraint(model, [h_KL; p_ρAB[:];pK;q[:]; qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
+
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
     p_sim = simulated_probabilities_bb84(v, η, pK)
-    @constraint(model, [δ; q[:] - p_sim[:];qK - η*pK; qK_noclick - (1-η)*pK] in Hypatia.EpiNormInfCone{T,T}(1+2+length(q[:]),true))
+    # @constraint(model, [δ; q[:] - p_sim[:];qK - η*pK; qK_noclick - (1-η)*pK] in Hypatia.EpiNormInfCone{T,T}(1+2+length(q[:]),true))
+    @constraint(model, [δ; q[:] - p_sim[:];qK - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
 
     # Key map
     G = gkraus(pK)
@@ -302,7 +304,6 @@ function Finite_bb84(L::Integer, N::T, pK::T; renyi::Bool = false, fast::Bool = 
 
     # Initial guess
     α0 = [ T(1 +1e-4)]
-    # α =  T(1 +1e-4)
 
     #ranges
     α_low = T(1); α_high = T(1.1) 
@@ -361,3 +362,5 @@ v=0.03; dimA = 2; dimB = 3
 # α =  T(1 +1e-4)
 
 Instance_bb84(f,N,pK,v;T)
+
+
