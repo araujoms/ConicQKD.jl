@@ -66,24 +66,24 @@ end
 # ----------------------------------------------------- #
 
 "Alice's measurements"
-function alice_povm(pK::T) where {T<:AbstractFloat}
-    PZ = pK*[proj(1,2), proj(2,2)]
-    PX = (1-pK)*0.5*[[1 1; 1 1], [1 -1; -1 1]]
+function alice_povm()
+    PZ = [proj(1,2), proj(2,2)]
+    PX = 0.5*[[1 1; 1 1], [1 -1; -1 1]]
     return vcat(PZ, PX)
 end
 
 "Bob's measurements"
-function bob_povm(pK::T) where {T<:AbstractFloat}
-    QZ = pK.*[[1 0 0;0 0 0;0 0 0],[0 0 0; 0 1 0; 0 0 0]]
-    QX =(1-pK)/2 .*[[1 1 0; 1 1 0; 0 0 0],[1 -1 0; -1 1 0; 0 0 0]]
-    Q = [pK*proj(3,3), (1-pK)*proj(3,3)]
+function bob_povm() 
+    QZ = [[1 0 0;0 0 0;0 0 0],[0 0 0; 0 1 0; 0 0 0]]
+    QX =0.5*[[1 1 0; 1 1 0; 0 0 0],[1 -1 0; -1 1 0; 0 0 0]]
+    Q = [proj(3,3), proj(3,3)]
     return vcat(QZ,QX,Q)
 end
 
 "Full Alice's and Bob's POVM"
-function ΠAB(pK::T) where {T<:AbstractFloat}
-    A = alice_povm(pK)
-    B = bob_povm(pK)
+function ΠAB()
+    A = alice_povm()
+    B = bob_povm()
     povm = [kron(a,b) for a in A for b in B]
     return povm
 end
@@ -95,16 +95,16 @@ function zkraus(dimA::Integer,dimB::Integer)
 end
 
 "Kraus operator for the key map"
-function gkraus(pK::T) where {T<:AbstractFloat}
-    PA = sqrt.(alice_povm(pK)[1:2])
+function gkraus() where {T<:AbstractFloat}
+    PA = alice_povm()[1:2]
     QB_Z = [1 0 0;0 1 0;0 0 0]
     QB_perp = [0 0 0;0 0 0;0 0 1]
     G1 = [kron(kron(ket(s), PA[s]),QB_Z) for s=1:2]
-    G2 = kron(kron(ket(1),sqrt(pK)*I(2)),QB_perp) 
+    G2 = kron(kron(ket(1),I(2)),QB_perp) 
     return  G2 +G1[1] + G1[2]
 end   
 
-"Leackage"
+"Leakage"
 function EC_cost_bb84(qber::T,η::T, f::T, N::T, pK::T, ϵCR::T) where {T<:AbstractFloat}
     # H(A|B) 
     leak_EC = binary_entropy(qber)
@@ -114,10 +114,10 @@ function EC_cost_bb84(qber::T,η::T, f::T, N::T, pK::T, ϵCR::T) where {T<:Abstr
     return leak_EC
 end
 
-"QBER for the Z basis"
+"QBER for the Z basis" #TODO: chequear si hay que multiplicar pK
 function qberZ(v::T, η::T, pK::T) where {T<:AbstractFloat}
-    A = alice_povm(pK)
-    B = bob_povm(pK)
+    A = alice_povm()
+    B = bob_povm()
     ρ = alice_depol_loss(v,η)
     p_error = sum([real(tr(kron(A[i],B[j])*ρ)) for i in 1:2, j in 1:2 if i != j])
     p_click = sum([real(tr(kron(A[i],B[j])*ρ)) for i in 1:2, j in 1:2])
@@ -147,10 +147,10 @@ Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
 #     return sum(expval)
 # end
 
-function simulated_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
+function simulated_probabilities_bb84(v::T, η::T) where {T<:AbstractFloat} 
     ρ = alice_depol_loss(v,η)
-    n = size(ΠAB(pK),1)
-    expval = [real(tr(ρ*ΠAB(pK)[i])) for i=Int(n/2 + 1):n]
+    n = size(ΠAB(),1)
+    expval = [real(tr(ρ*ΠAB()[i])) for i=Int(n/2 + 1):n]
     return expval
 end
 
@@ -178,7 +178,6 @@ function conic_bb84(
     # Variables
     @variable(model, ρAB[1:d, 1:d], Hermitian)
     @variable(model, qK ≥ 0)
-    # @variable(model, qK_noclick ≥ 0)
     @variable(model, q[1:Int(n/2)] ≥ 0) 
     @variable(model, h_QKD)
     @variable(model, h_KL)
@@ -200,17 +199,25 @@ function conic_bb84(
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
-    p_sim = simulated_probabilities_bb84(v, η, pK)
+    p_sim = simulated_probabilities_bb84(v, η)
     # @constraint(model, [δ; q[:] - p_sim[:];qK - η*pK; qK_noclick - (1-η)*pK] in Hypatia.EpiNormInfCone{T,T}(1+2+length(q[:]),true))
     @constraint(model, [δ; q[:] - p_sim[:];qK - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
 
     # Key map
     G = gkraus(pK)
-    Ghat =  [I(d)]
+
+    tol=1e-10
+    Ug, D, V = svd(G)
+    r = sum(s .> tol)
+    # orthonormal basis for the range of A
+    Ured = U[:, 1:r] 
+
+    Ghat =  [Ured'*G]
     Z= zkraus(dimA,dimB)
     Zhat = [Zi*G for Zi in Z]
 
-    blocks = [1:2,3:4]#[(i-1)*d+1:i*d for i ∈ 1:]
+    
+    blocks = [(i-1)*d+1:i*d for i ∈ 1:2]
 
     vec_dim = Cones.svec_length(Complex, d)
     ρAB_vec = svec(ρAB)
@@ -222,7 +229,7 @@ function conic_bb84(
     println("It is coding fast cone")
     β = inv(α)
     #TODO:  understand and define S
-    @constraint(model, [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+    @constraint(model, [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + vec_dim;S=Ug*Ug', blocks))
     # @constraint(model, u >= 0)
     # else
     #     println("It is coding true cone")
