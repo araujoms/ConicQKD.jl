@@ -291,15 +291,16 @@ function hbe_dmcv_general(
         )
     else
         β = inv(2 - inv(renyiα))
-        dim_σAB = size(Zhat[1],2)
-        @variable(model, σAB[1:dim_σAB, 1:dim_σAB], Hermitian)
-        @constraint(model, tr(σAB) == 1)
-        σAB_vec = svec(σAB)
+        dim_σSAB = size(Z[1],2)
+        @variable(model, σSAB[1:dim_σSAB, 1:dim_σSAB], Hermitian)
+        @constraint(model, tr(σSAB) == 1)
+        σSAB_vec = svec(σSAB)
         @constraint(
             model,
-            [u; ρAB_vec; σAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + 2vec_dim; S, blocks)
+            [u; ρAB_vec; σSAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Z, 1 + length(ρAB_vec) + length(σSAB_vec); S=G, blocks)
         )
     end
+
     sβ = β < 1 ? -1 : 1
     @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
     @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
@@ -340,6 +341,7 @@ function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; 
         SKR_Max = h_renyi - correction
 
         @printf("α-1 = %.5e, SKR = %.2e \n", opt_renyi-1, SKR_Max)
+        
     # Otherwise, optimize with respect to renyiα
     else
         finiteSKR_pars = Finite_pars(ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, leak_EC, fast)
@@ -357,51 +359,12 @@ function Finite_dmcv(L::Integer, f::T, N::T, Nc::Integer, pK::T, Δs::T, Δ::T; 
         SKR_Max = -sol.minimum
     end
 
-    # renyiα = T(1 +1e-5)
-
-    # opt_renyi = T(0)
-    # SKR_Max   = T(0)
-    # stalling  = 0
-    # jj = 0
-
-    
-    # for b ∈ 1:100
-    #     jj += 1
-    #     renyiα += 2e-6
-
-    #     # Total correction
-    #     correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
-
-    #     # Conic program
-    #     h_renyi = hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, γ, renyiα ; renyi, fast)
-
-    #     Finite_SKR = h_renyi - correction
-
-    #     @printf("  Iteration %d, α-1 = %.5e, SKR = %.2e \n", jj, renyiα-1, Finite_SKR)
-
-    #     if Finite_SKR ≤ SKR_Max && SKR_Max > 0
-    #         stalling += 1
-    #         if stalling>2
-    #             @printf("  Optimality reached. SKR: %.2e \n",SKR_Max)
-    #             @printf("  Optimal Renyi - 1: %.5e \n", opt_renyi-1)
-    #             break
-    #         # No positive secret key - break loop
-    #         end
-    #     elseif mod(jj,20)==0 && SKR_Max ≤ 0
-    #         @warn("WARNING: no positive secret key rate was found \n")
-    #         break
-    #     else
-    #         stalling=0
-    #         SKR_Max = Finite_SKR
-    #         opt_renyi = renyiα
-    #     end
-    # end
-
     return SKR_Max, opt_renyi, γ, leak_EC
 end
 
 
-f = 1.0; N = 1e10; Nc = 5; Δs = 1.5; Δ = 4.0; T = Float64; L = 20; fast = true;
+# Suggested values for a test
+# f = 1.0; N = 1e10; Nc = 5; Δs = 1.5; Δ = 4.0; T = Float64; L = 20; fast = true;
 function Instance_dmcv(
     f::Real,
     N::Real,
