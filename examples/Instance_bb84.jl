@@ -8,10 +8,8 @@ using Optim
 import Hypatia
 import Hypatia.Cones
 import JLD2
-
 using Printf
 using Parameters
-
 
 @with_kw struct epsilon_coeffs{T<:AbstractFloat}
     ϵCR ::T = 1e-11
@@ -66,7 +64,7 @@ end
 # ----------------------------------------------------- #
 
 "Alice's measurements"
-function alice_povm(pK::T) where {T<:AbstractFloat}
+function alice_povm(pK::T) where {T<:AbstractFloat} 
     PZ = pK*[proj(1,2), proj(2,2)]
     PX = (1-pK)*0.5*[[1 1; 1 1], [1 -1; -1 1]]
     return vcat(PZ, PX)
@@ -76,7 +74,7 @@ end
 function bob_povm(pK::T) where {T<:AbstractFloat} 
     QZ = pK*[[1 0 0;0 0 0;0 0 0],[0 0 0; 0 1 0; 0 0 0]]
     QX = (1-pK)*0.5*[[1 1 0; 1 1 0; 0 0 0],[1 -1 0; -1 1 0; 0 0 0]]
-    Q = [pK*proj(3,3), (1-pK)*proj(3,3)]
+    Q = [proj(3,3)]
     return vcat(QZ,QX,Q)
 end
 
@@ -89,11 +87,12 @@ function ΠAB(pK::T) where {T<:AbstractFloat}
 end
 
 "Kraus operator for the pinching map"
-function zkraus(dimA::Integer,dimB::Integer)
-    K = [kron(proj(i, 2), I(dimA*dimB)) for i ∈ 1:2]
+function zkraus()
+    K = [kron(proj(i, 2), I(6)) for i ∈ 1:2]
     return K
 end
 
+"Kraus operator for the pinching map after facial reduction"
 function zhatkraus(pK::T) where {T<:AbstractFloat}
     QB_Z = pK*[1 0 0;0 1 0;0 0 0]
     QB_perp = pK*[0 0 0;0 0 0;0 0 1]
@@ -101,14 +100,15 @@ function zhatkraus(pK::T) where {T<:AbstractFloat}
          kron(proj(2),QB_Z)]
     return Z
 end
+
 "Kraus operator for the key map"
-function gkraus(pK::T) where {T<:AbstractFloat}
+function gkraus(pK::T) where {T<:AbstractFloat} 
     PA = alice_povm(pK)[1:2]/pK
     QB_Z = [1 0 0;0 1 0;0 0 0]
     QB_perp = [0 0 0;0 0 0;0 0 1]
     G1 = [kron(kron(ket(s), PA[s]),QB_Z) for s=1:2]
     G2 = kron(kron(ket(1),I(2)),QB_perp) 
-    return  G2 +G1[1] + G1[2]
+    return  G2 + G1[1] + G1[2]
 end   
 
 "Leakage"
@@ -131,6 +131,13 @@ function qberZ(v::T, η::T, pK::T) where {T<:AbstractFloat}
     return p_error/p_click
 end
 
+"Computes the Shannon entropy"
+function ShanEnt(M::AbstractArray)
+    entropy = M.*log2(M)
+    entropy = -sum(entropy)
+    return entropy
+end
+
 "Finite corrections for the final key rate"
 Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
     (log(1/ϵPE)  + log(1/ϵPA))* α/(α-T(1)) - 2
@@ -144,17 +151,8 @@ function GEN_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat}
     return gen
 end
 
-# "Probablity that there is no click"
-# function prob_noclick(v,η, pK)
-#     ρ = alice_depol_loss(v,η)
-#     A = alice_povm(pK)
-#     B = bob_povm(pK)
-#     expval = [real(tr(ρ*kron(a,B[5]/pK))) for a=A[1:2] ]
-#     return sum(expval)
-# end
-
 "PE correlations with simulated state"
-function PE_probabilities_bb84(v::T, η::T) where {T<:AbstractFloat} 
+function PE_probabilities_bb84(v::T, η::T,pK::T) where {T<:AbstractFloat} 
     ρ = alice_depol_loss(v,η)
     n = size(ΠAB(pK),1)
     expval = [real(tr(ρ*ΠAB(pK)[i])) for i=Int(n/2 + 1):n]
@@ -166,7 +164,6 @@ function constraint_probabilities_bb84(ρ::AbstractMatrix, pK::T) where {T<:Abst
     n = size(ΠAB(pK),1)
     return real(dot.(Ref(ρ),ΠAB(pK)[Int(n/2 + 1):n]))
 end
-
 
 function conic_bb84(
     v      ::T, 
@@ -190,11 +187,10 @@ function conic_bb84(
     @variable(model, h_QKD)
     @variable(model, h_KL)
 
-    # Constraints on the marginal state
-    ρA = partial_trace(ρAB, 2, [2, 3])
-    @constraint(model, ρA == partial_trace(alice_depol_loss(v,η), 2, [2, 3]))
-    # @constraint(model, ρA == I(2)/2) # XXX TODO revisar que esto no implica reduccion facial
-    # @constraint(model, tr(ρAB)==T(1))
+    # Constraints on the state
+    # ρA = partial_trace(ρAB, 2, [2, 3])
+    # @constraint(model, ρA == partial_trace(alice_depol_loss(v,η), 2, [2, 3]))
+    @constraint(model, tr(ρAB)==T(1))
 
     # Constraints on probabilities
     @constraint(model, sum(q) + qK == 1 )
@@ -206,16 +202,13 @@ function conic_bb84(
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
-    p_sim = PE_probabilities_bb84(v, η)
+    p_sim = PE_probabilities_bb84(v, η, pK)
     @constraint(model, [δ; q[:] - p_sim[:];qK - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
 
     # Key map
-    G = gkraus(pK)
+    G = gkraus(pK) ; S= G'*G
     Ghat =  [I(6)]
-    S= G'*G
-    # Z= zkraus(dimA,dimB)
     Zhat = zhatkraus(pK) #[Zi*G for Zi in Z]
-
     
     blocks = [1:3,4:6] #[(i-1)*d+1:i*d for i ∈ 1:2]
 
@@ -303,12 +296,12 @@ function Finite_bb84(L::Integer, N::T, pK::T; renyi::Bool = false, fast::Bool = 
         @printf("α-1 = %.5e, SKR = %.2e \n", opt_renyi-1, SKR_Max)
     # Otherwise, optimize with respect to α
     else
-            # unpack pars
+        # unpack pars
         finiteSKR_pars = FinitePars(η, N, pK, leak_EC, renyi, fast )
         optimize_renyi(α) = -FiniteSKR(α[1], finiteSKR_pars)
 
         # Initial guess
-        α0 = [ T(1 +1e-6)]
+        α0 = [T(1 +1e-6)]
 
         #ranges
         α_low = T(1); α_high = T(1.1) 
@@ -339,8 +332,8 @@ function Instance_bb84(
     # Create output file
     RATE_BB84 = "Rate_bb84_N"*string(N)*".csv"
     file      = open(RATE_BB84,"a")
-    @printf(file,"xi, f, N, nu \n")
-    @printf(file,"0.01, %.2f %.2f, %.2f \n",f,log10(N),v)
+    @printf(file,"f, N, nu \n")
+    @printf(file,"%.2f, %.2f, %.2f \n",f,log10(N),v)
     @printf(file,"D, pK, a-1, leakEC, SKR \n")
     close(file)
 
@@ -356,15 +349,7 @@ function Instance_bb84(
     end
 end
 
-f = 1.; N = 1e11; pK = 0.95; T = Float64; L= 20; 
+f = 1.16; N = 1e11;  T = Float64;# pK = 0.95;L= 20; 
 v=0.03; dimA = 2; dimB = 3
 
-# @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
-# η=10^(-0.02*L)
-# α =  2.50326157e-05
-
 Instance_bb84(f,N,pK,v;T)
-
-
-
-
