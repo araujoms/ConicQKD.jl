@@ -5,12 +5,6 @@ using Ket
 import Hypatia
 import Hypatia.Cones
 
-function zmap(ρ)
-    K = zkraus()
-    Zρ = sum(K[i] * ρ * K[i] for i ∈ 1:2)
-    return Zρ
-end
-
 function zkraus()
     K = [kron(proj(i, 2), I(2)) for i ∈ 1:2]
     return K
@@ -81,9 +75,9 @@ function hae_bb84_reducedz(qx::T, α::T = T(11) / 10; renyi = false, fast = true
 
     V = isometryz(T)
     Ghat = [I(dim_ρ)]
-    Z = zkraus() # Zhat for RenyiQKD cone
-    V2 = [[1, 0, 0, 0] [0, 0, 0, 1]]
-    Zhat = [V2'Zi * V for Zi ∈ Z] # Zhat for QKD and FastRenyiQKD cones
+    Zhat = zkraus()
+    W_ZG = [[1, 0, 0, 0] [0, 0, 0, 1]]
+    ZGhat = [V2'Zi * V for Zi ∈ Zhat]
 
     vec_dim = Cones.svec_length(T, dim_ρ)
     ρ_vec = svec(ρ)
@@ -95,7 +89,7 @@ function hae_bb84_reducedz(qx::T, α::T = T(11) / 10; renyi = false, fast = true
             β = inv(α)
             @constraint(
                 model,
-                [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim; S = V2'V, blocks = [1:1, 2:2])
+                [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, ZGhat, 1 + vec_dim; S = W_ZG'V, blocks = [1:1, 2:2])
             )
         else
             @variable(model, σ[1:4, 1:4], Symmetric)
@@ -105,11 +99,11 @@ function hae_bb84_reducedz(qx::T, α::T = T(11) / 10; renyi = false, fast = true
             @constraint(
                 model,
                 [h; ρ_vec; σ_vec] in
-                EpiRenyiQKDTriCone{T,T}(β, Ghat, Z, 1 + length(ρ_vec) + length(σ_vec); S = V, blocks = [1:2, 3:4])
+                EpiRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + length(ρ_vec) + length(σ_vec); S = V, blocks = [1:2, 3:4])
             )
         end
     else
-        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim; blocks = [1:1, 2:2]))
+        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, ZGhat, 1 + vec_dim; blocks = [1:1, 2:2]))
     end
 
     set_optimizer(model, Hypatia.Optimizer{T})
@@ -137,8 +131,8 @@ function hae_bb84_reducedx(qz::T, α::T = T(11) / 10; renyi = false, fast = true
 
     V = isometryx(T)
     Ghat = [I(dim_ρ)]
-    Z = zkraus() # Zhat for RenyiQKD cone
-    Zhat = [Zi * V for Zi ∈ Z] # Zhat for QKD and FastRenyiQKD cones
+    Zhat = zkraus()
+    ZGhat = [Zi * V for Zi ∈ Zhat]
     blocks = [1:2, 3:4]
 
     vec_dim = Cones.svec_length(T, dim_ρ)
@@ -149,7 +143,7 @@ function hae_bb84_reducedx(qz::T, α::T = T(11) / 10; renyi = false, fast = true
     if renyi
         if fast
             β = inv(α)
-            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim; S = V, blocks))
+            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, ZGhat, 1 + vec_dim; S = V, blocks))
         else
             @variable(model, σ[1:4, 1:4], Symmetric)
             @constraint(model, tr(σ) == 1)
@@ -158,11 +152,11 @@ function hae_bb84_reducedx(qz::T, α::T = T(11) / 10; renyi = false, fast = true
             @constraint(
                 model,
                 [h; ρ_vec; σ_vec] in
-                EpiRenyiQKDTriCone{T,T}(β, Ghat, Z, 1 + length(ρ_vec) + length(σ_vec); S = V, blocks)
+                EpiRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + length(ρ_vec) + length(σ_vec); S = V, blocks)
             )
         end
     else
-        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim; blocks))
+        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, ZGhat, 1 + vec_dim; blocks))
     end
 
     set_optimizer(model, Hypatia.Optimizer{T})

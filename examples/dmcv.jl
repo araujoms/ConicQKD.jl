@@ -166,10 +166,11 @@ function hbe_dmcv_general(
 
     G = gkraus(T, Nc)
     Ghat = [I(dim_ρAB)]
-    Z = zkraus(Nc)
-    Zhat = [Zi * G[1] for Zi ∈ Z]
+    Zhat = zkraus(Nc)
+    ZGhat = [Zi * G[1] for Zi ∈ Zhat]
     permutation = vec(reshape(1:16*(Nc+1), 4, 4 * (Nc + 1))')
     Zhatperm = [Zi[permutation, :] for Zi ∈ Zhat]
+    ZGhatperm = [Zi[permutation, :] for Zi ∈ ZGhat]
     S = G[1][permutation, :]
 
     block_size = 4 * (Nc + 1)
@@ -185,20 +186,20 @@ function hbe_dmcv_general(
             β = inv(renyiα)
             @constraint(
                 model,
-                [h; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks)
+                [h; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, ZGhatperm, 1 + vec_dim; S, blocks)
             )
         else
             β = inv(2 - inv(renyiα))
-            @variable(model, σAB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
+            @variable(model, σAB[1:4dim_ρAB, 1:4dim_ρAB], Hermitian)
             @constraint(model, tr(σAB) == 1)
             σAB_vec = svec(σAB)
             @constraint(
                 model,
-                [h; ρAB_vec; σAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + 2vec_dim; S, blocks)
+                [h; ρAB_vec; σAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + length(ρAB_vec) + length(σAB_vec); S, blocks)
             )
         end
     else
-        @constraint(model, [h; ρAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
+        @constraint(model, [h; ρAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, ZGhatperm, 1 + vec_dim; blocks))
     end
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
@@ -223,7 +224,6 @@ function hbe_dmcv_reduced(
     fast::Bool = true
 ) where {T<:AbstractFloat}
     dim_σAB = 4
-    dim_ρAB = 4 * (Nc + 1)
     model = GenericModel{T}()
 
     η = 10^(-2 * L / 100)
@@ -241,15 +241,14 @@ function hbe_dmcv_reduced(
     norms = norm.(states)
 
     Ghat = [I(dim_σAB)]
-    Zhat = [sum(norms[k, x] * kron(proj(x, 4), ket(k, 4)) for x ∈ 1:4) for k ∈ 1:4]
+    ZGhat = [sum(norms[k, x] * kron(proj(x, 4), ket(k, 4)) for x ∈ 1:4) for k ∈ 1:4]
 
     permutation = vec(reshape(1:16, 4, 4)')
-    Zhatperm = [Zi[permutation, :] for Zi ∈ Zhat]
+    ZGhatperm = [Zi[permutation, :] for Zi ∈ ZGhat]
 
     block_size = 4
     blocks = [(i-1)*block_size+1:i*block_size for i ∈ 1:4]
 
-    vec_dim = Cones.svec_length(Complex, dim_σAB)
     σAB_vec = svec(σAB)
 
     @variable(model, h)
@@ -259,20 +258,20 @@ function hbe_dmcv_reduced(
         G = gkraus(T, Nc)
         if fast
             β = inv(renyiα)
-            W = sum(kron(ket(j, 4), states[i, j] * ket(j, 4)' / norms[i, j], proj(i, 4)) for j ∈ 1:4 for i ∈ 1:4)
-            # Z[i] * G[1] * V = W * Zhat[i]
-            S = (W'*G[1]*V)[permutation, :]
+            W_Z = sum(kron(ket(j, 4), states[i, j] * ket(j, 4)' / norms[i, j], proj(i, 4)) for j ∈ 1:4 for i ∈ 1:4)
+            # Z[i] * G[1] * V = W_Z * ZGhat[i]
+            S = (W_Z'*G[1]*V)[permutation, :]
             @constraint(
                 model,
-                [h; σAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks)
+                [h; σAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, ZGhatperm, 1 + length(σAB_vec); S, blocks)
             )
         else
             β = inv(2 - inv(renyiα))
-            @variable(model, σ2AB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
+            dim_σ2AB = 16 * (Nc + 1)
+            @variable(model, σ2AB[1:dim_σ2AB, 1:dim_σ2AB], Hermitian)
             @constraint(model, tr(σ2AB) == 1)
             σ2AB_vec = svec(σ2AB)
-            Z = zkraus(Nc)
-            Zhat = [Zi * G[1] for Zi ∈ Z]
+            Zhat = zkraus(Nc)
             permutation = vec(reshape(1:16*(Nc+1), 4, 4 * (Nc + 1))')
             Zhatperm = [Zi[permutation, :] for Zi ∈ Zhat]
             block_size = 4 * (Nc + 1)
@@ -285,7 +284,7 @@ function hbe_dmcv_reduced(
             )
         end
     else
-        @constraint(model, [h; σAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, Zhatperm, 1 + vec_dim; blocks))
+        @constraint(model, [h; σAB_vec] in EpiQKDTriCone{T,Complex{T}}(Ghat, ZGhatperm, 1 + length(σAB_vec); blocks))
     end
     set_optimizer(model, Hypatia.Optimizer{T})
     set_attribute(model, "verbose", true)
