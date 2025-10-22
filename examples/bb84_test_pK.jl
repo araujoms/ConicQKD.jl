@@ -44,28 +44,10 @@ function alice_depol_loss(v::T, η::T) where {T<:AbstractFloat}
     return ρ
 end
 
-# ----------  Choi representation of losses ---------- #
-"Choi operator for channel losses"
-function choi_loss(η)
-    dA=2; dAL= 3
-    ϕplus= kron(ket(1,dA),ket(1,dAL)) + kron(ket(2,dA),ket(2,dAL)) 
-    L = kron(proj(1,dA),proj(3,dAL)) + kron(proj(2,dA),proj(3,dAL))
-    Φ = η*ϕplus*ϕplus' + (1-η)*L
-    return Φ
-end
-
-function state(η,v)
-    ρaA = partial_transpose(alice_depol(v,2),[2],[2,2])
-    J = choi_loss(η)
-    ρout = real(partial_trace(kron(ρaA,I(3))*kron(I(2),J), 2,[2,2,3]))
-    return ρout
-end
-# ----------------------------------------------------- #
-
 "Alice's measurements"
-function alice_povm(pK::T) where {T<:AbstractFloat} 
-    PZ = pK*[proj(1,2), proj(2,2)]
-    PX = (1-pK)*0.5*[[1 1; 1 1], [1 -1; -1 1]]
+function alice_povm()
+    PZ = [proj(1,2), proj(2,2)]
+    PX = 0.5*[[1 1; 1 1], [1 -1; -1 1]]
     return vcat(PZ, PX)
 end
 
@@ -79,7 +61,7 @@ end
 
 "Full Alice's and Bob's POVM"
 function ΠAB(pK::T) where {T<:AbstractFloat}
-    A = alice_povm(pK)
+    A = alice_povm()
     B = bob_povm(pK)
     povm = [kron(a,b) for a in A for b in B]
     return povm
@@ -91,24 +73,12 @@ function zkraus()
     return K
 end
 
-"Kraus operator for the pinching map after facial reduction"
-function zhatkraus(pK::T) where {T<:AbstractFloat}
-    QB_Z = pK*[1 0 0;0 1 0;0 0 0]
-    QB_perp = pK*[0 0 0;0 0 0;0 0 1]
-    Z = [kron(proj(1),QB_Z) + kron(I(2),QB_perp),
-         kron(proj(2),QB_Z)]
-    return Z
-end
-
 "Kraus operator for the key map"
-function gkraus(pK::T) where {T<:AbstractFloat}
-    PA = alice_povm(pK)[1:2]/pK
-    QB_Z = [1 0 0;0 1 0;0 0 0]
-    QB_perp = [0 0 0;0 0 0;0 0 1]
-    G1 = [kron(kron(ket(s), PA[s]),QB_Z) for s=1:2]
-    G2 = kron(kron(ket(1),I(2)),QB_perp) 
-    return  G2 + G1[1] + G1[2]
-end   
+function gkrausTop(pK::T) where {T<:AbstractFloat} 
+    QB_Z = proj(1,3)+proj(2,3) 
+    G = sqrt(pK)*sum([kron(ket(i,3),kron(proj(i),QB_Z)) for i=1:2])
+    return  G
+end  
 
 "Leakage"
 function EC_cost_bb84(qber::T,η::T, f::T, N::T, pK::T, ϵCR::T) where {T<:AbstractFloat}
@@ -122,19 +92,12 @@ end
 
 "QBER for the Z basis"
 function qberZ(v::T, η::T, pK::T) where {T<:AbstractFloat}
-    A = alice_povm(pK)
+    A = alice_povm()
     B = bob_povm(pK)
     ρ = alice_depol_loss(v,η)
     p_error = sum([real(tr(kron(A[i],B[j])*ρ)) for i in 1:2, j in 1:2 if i != j])
     p_click = sum([real(tr(kron(A[i],B[j])*ρ)) for i in 1:2, j in 1:2])
     return p_error/p_click
-end
-
-"Computes the Shannon entropy"
-function ShanEnt(M::AbstractArray)
-    entropy = M.*log2(M)
-    entropy = -sum(entropy)
-    return entropy
 end
 
 "Finite corrections for the final key rate"
@@ -144,7 +107,7 @@ Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
 "Probabilities for key generation with simulated state"
 function GEN_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
     ρ = alice_depol_loss(v,η)
-    A = alice_povm(pK)
+    A = alice_povm()
     B = bob_povm(pK)
     gen  = [real(tr(ρ*kron(a,b))) for a=A[1:2], b=B[1:5]]
     return gen
@@ -187,40 +150,39 @@ function conic_bb84(
     @variable(model, h_KL)
 
     # Constraints on the state
-    # ρA = partial_trace(ρAB, 2, [2, 3])
-    # @constraint(model, ρA == partial_trace(alice_depol_loss(v,η), 2, [2, 3]))
-    @constraint(model, tr(ρAB)==T(1))
+    @constraint(model, partial_trace(ρAB, 2, [2, 3])==I(2)/2)
 
     # Constraints on probabilities
     @constraint(model, sum(q) + qK == 1 )
 
     # Constraints on exp vals via KL divergence
-    p_ρAB = constraint_probabilities_bb84(ρAB, pK)
-    @constraint(model, [h_KL; p_ρAB[:];pK;q[:]; qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
+    p_ρAB = constraint_probabilities_bb84(ρAB, pK) # PE probabilities
+    @constraint(model, [h_KL; vec(p_ρAB); pK^2; vec(q); qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
-    p_sim = PE_probabilities_bb84(v, η,pK)
-    @constraint(model, [δ; q[:] - p_sim[:];qK - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
+    p_sim = PE_probabilities_bb84(v, η, pK) 
+    @constraint(model, [δ; vec(q) - vec(p_sim); qK - pK^2] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
 
     # Key map
-    G = gkraus(pK) ; S= G'*G
-    Ghat =  [I(6)]
-    Zhat = zhatkraus(pK) #[Zi*G for Zi in Z]
+    S= I(6)
+    G_top = gkrausTop(pK)
+    Ghat_top =  sqrt(pK)*[kron(I(2),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)')]
     
     blocks = [1:3,4:6] #[(i-1)*d+1:i*d for i ∈ 1:2]
 
     vec_dim = Cones.svec_length(Complex, d)
     ρAB_vec = svec(ρAB)
 
-    # Conic program
+   # Conic program
     if renyi
         @variable(model, u)
         if fast
             println("It is coding fast cone")
-            β = inv(α)
-            @constraint(model, [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + vec_dim;S, blocks))
+            β = inv(α) ; S= I(6)
+            ZGhat_top = [sqrt(pK)*kron(proj(i),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)') for i=1:2]
+            @constraint(model, [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, ZGhat_top, 1 + vec_dim;S))
         else
             println("It is coding true cone")
             β = inv(2 - inv(α))
@@ -230,7 +192,7 @@ function conic_bb84(
         #     # @constraint(model, [u; ρAB_vec;σAB_vec]) in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + 2*length(ρ_vec); blocks)
         end
         sβ = β < 1 ? -1 : 1
-        @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
+        @constraint(model, [h_QKD * (β - 1), 1, 1 - real(tr(G_top*ρAB*G_top')) + sβ * u] in MOI.ExponentialCone())
         @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
     else
         throw("Not implemented yet")
@@ -315,7 +277,7 @@ function Finite_bb84(L::Integer, N::T, pK::T; renyi::Bool = false, fast::Bool = 
     return SKR_Max, optimal_renyi, leak_EC
 end
 
-f = 1.16; N = 1e11;  T = Float64;# pK = 0.95;L= 20; 
+f = 1.16; N = 1e5;  T = Float64;# pK = 0.95;L= 20; 
 v=0.03; dimA = 2; dimB = 3
 
 
@@ -331,7 +293,7 @@ function Instance_bb84_pK(
     f = T(f); N = T(N); 
 
     # Create output file
-    RATE_BB84 = "examples/data_bb84/varying_pK/Rate_bb84_L"*string(Int(L))*"N"*string(N)*".csv"
+    RATE_BB84 = "examples/data_bb84/varying_pK/Rate_bb84_N1e"*string(count(==('0'), Int(N)))*"_L"*string(L)*".csv"
     file      = open(RATE_BB84,"a")
     @printf(file,"f, N, nu \n")
     @printf(file,"%.2f, %.2f, %.2f \n",f,log10(N),v)
@@ -351,6 +313,6 @@ function Instance_bb84_pK(
 end
 
 
-for L in vcat(1,10:10:100)
+for L in [1,10,30,50] #vcat(1,10:10:100)
     Instance_bb84_pK(L,f,N,v;T)
 end
