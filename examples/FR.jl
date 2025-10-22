@@ -27,3 +27,6 @@ for i=1:2
     ZGhat[i]=U[:,idx_nonzero]'*ZG_top[i]
 end
 ZGhat
+
+# Mateus suggestion of the facial reducted map
+ZGhat_top = [pK*kron(proj(i),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)') for i=1:2]
