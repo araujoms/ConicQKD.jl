@@ -8,6 +8,9 @@ function gkrausTop(pK::T) where {T<:AbstractFloat}
     return  G
 end  
 
+# choose a pK
+pK = 0.95
+
 G_top = gkrausTop(pK)
 gg = G_top*G_top'
 λ,P = eigen(gg)
