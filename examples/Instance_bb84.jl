@@ -320,7 +320,7 @@ function Instance_bb84(
     f = T(f); N = T(N); pK = T(pK)
 
     # Create output file
-    RATE_BB84 = "Rate_bb84_N"*string(N)*".csv"
+    RATE_BB84 = "Rate_bb84_N1e"*string(count(==('0'), string(Int(N))))*".csv"
     file      = open(RATE_BB84,"a")
     @printf(file,"f, N, nu \n")
     @printf(file,"%.2f, %.2f, %.2f \n",f,log10(N),v)

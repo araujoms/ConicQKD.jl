@@ -293,7 +293,7 @@ function Instance_bb84_pK(
     f = T(f); N = T(N); 
 
     # Create output file
-    RATE_BB84 = "examples/data_bb84/varying_pK/Rate_bb84_N1e"*string(count(==('0'), Int(N)))*"_L"*string(L)*".csv"
+    RATE_BB84 = "examples/data_bb84/varying_pK/Rate_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_L"*string(L)*".csv"
     file      = open(RATE_BB84,"a")
     @printf(file,"f, N, nu \n")
     @printf(file,"%.2f, %.2f, %.2f \n",f,log10(N),v)
