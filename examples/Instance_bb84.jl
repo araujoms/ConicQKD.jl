@@ -186,13 +186,13 @@ function conic_bb84(
     @constraint(model, sum(q) + qK == 1 )
 
     # Constraints on exp vals via KL divergence
-    p_ρAB = constraint_probabilities_bb84(ρAB, pK) # PE probabilities
+    p_ρAB = constraint_probabilities_bb84(ρAB, pK)*(1-pK) # PE probabilities
     @constraint(model, [h_KL; vec(p_ρAB); pK; vec(q); qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
-    p_sim = PE_probabilities_bb84(v, η, pK) 
+    p_sim = PE_probabilities_bb84(v, η, pK)*(1-pK)
     @constraint(model, [δ; vec(q) - vec(p_sim); qK - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
 
     # Key map
