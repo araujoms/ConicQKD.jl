@@ -156,14 +156,14 @@ function conic_bb84(
     @constraint(model, sum(q) + qK == 1 )
 
     # Constraints on exp vals via KL divergence
-    p_ρAB = constraint_probabilities_bb84(ρAB, pK) # PE probabilities
-    @constraint(model, [h_KL; vec(p_ρAB); pK^2; vec(q); qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
+    p_ρAB = constraint_probabilities_bb84(ρAB, pK)*(1-pK) # PE probabilities
+    @constraint(model, [h_KL; vec(p_ρAB); pK; vec(q); qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(vec(q)),false))
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
-    p_sim = PE_probabilities_bb84(v, η, pK) 
-    @constraint(model, [δ; vec(q) - vec(p_sim); qK - pK^2] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
+    p_sim = PE_probabilities_bb84(v, η, pK)*(1-pK)
+    @constraint(model, [δ; vec(q) - vec(p_sim); qK - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(vec(q)),true))
 
     # Key map
     S= I(6)
@@ -231,12 +231,12 @@ function FiniteSKR(α,pK, finiteSKR_pars::FinitePars{T}) where {T<:AbstractFloat
     return FiniteSecretKey
 end
 
-function Finite_bb84(L::Integer, N::T, pK::T; renyi::Bool = false, fast::Bool = false) where {T<:AbstractFloat}
+function Finite_bb84(dB::Integer, N::T, pK::T; renyi::Bool = false, fast::Bool = false) where {T<:AbstractFloat}
     
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
 
-    η=10^(-0.02*L)
+    η=10^(-dB/10)
 
     # Calculate EC cost per symbol
     qZ = qberZ(v, η, pK)
@@ -259,25 +259,52 @@ function Finite_bb84(L::Integer, N::T, pK::T; renyi::Bool = false, fast::Bool = 
     else
         # unpack pars
         finiteSKR_pars = FinitePars(η, N, leak_EC, renyi, fast )
-        optimize_renyi(α) = -FiniteSKR(α[1],pK, finiteSKR_pars)
+        obj(α)  = -FiniteSKR(α,pK, finiteSKR_pars)
 
         # Initial guess
-        α0 = [T(1 +1e-6)]
+        α0 = T(1 +1e-4)
 
         #ranges
         α_low = T(1); α_high = T(1.1) 
 
-        options = Optim.Options(iterations = 100,f_calls_limit = 30)
-        method  = Optim.NelderMead()
-        sol = Optim.optimize(optimize_renyi, α_low, α_high, α0 ,method,options)
+        # options = Optim.Options(iterations = 100,f_calls_limit = 30)
+        # method  = Optim.NelderMead()
+        sol = Optim.optimize(obj, α_low, α_high,Brent())
         optimal_renyi = sol.minimizer[1]
         SKR_Max = -sol.minimum
     end
 
+    # α_min = 1e-7
+    # α_max = 0.4
+    # n = 5000 
+
+    # α_grid =1 .+ α_min .* ((α_max/α_min) .^ (range(0, 1; length=n)))
+
+    # SKR_Max = -Inf
+    # optimal_renyi = α_min
+
+    # decreasing_counter = 0 
+    #
+    # for α in α_grid
+    #     current_SKR = FiniteSKR(α, pK, finiteSKR_pars)
+    #     # If current value is better, update
+    #     if current_SKR > SKR_Max
+    #         SKR_Max = current_SKR
+    #         optimal_renyi = α
+    #         decreasing_counter = 0
+    #     else
+    #         decreasing_counter += 1
+    #     end
+    #     if decreasing_counter ≥ 3
+    #         println("Early stop at α = $(round(α, digits=6)) — maximum reached near α = $(round(optimal_renyi, digits=6))")
+    #         break
+    #     end
+    # end
+
     return SKR_Max, optimal_renyi, leak_EC
 end
 
-f = 1.16; N = 1e5;  T = Float64;# pK = 0.95;L= 20; 
+f = 1.16; N = 1e9;  T = Float64;# pK = 0.95;L= 20; 
 v=0.03; dimA = 2; dimB = 3
 
 
@@ -293,26 +320,30 @@ function Instance_bb84_pK(
     f = T(f); N = T(N); 
 
     # Create output file
-    RATE_BB84 = "examples/data_bb84/varying_pK/Rate_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_L"*string(L)*".csv"
+    RATE_BB84 = "examples/data_bb84/varying_pK/2Rate_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_L"*string(L)*".csv"
     file      = open(RATE_BB84,"a")
     @printf(file,"f, N, nu \n")
     @printf(file,"%.2f, %.2f, %.2f \n",f,log10(N),v)
-    @printf(file,"D, pK, a-1, leakEC, SKR \n")
+    @printf(file,"D, pK, a-1, leakEC/pK, SKR \n")
     close(file)
 
     # Start loop for various values of the distance
-    for pK ∈ 0.3:0.05:1
+    for pK ∈ 0.85:0.01:1
         @printf("Distance: %d ---------\n",L)
         Finite_SKR, optimal_α, leak_EC  = Finite_bb84(L, N, pK; renyi = true, fast =true)
 
         # Record outputs
         file = open(RATE_BB84,"a")
-        @printf(file,"%d, %.2f, %.8e, %.12f, %.8e \n",L,pK,optimal_α-T(1),leak_EC,Finite_SKR)
+        @printf(file,"%d, %.2f, %.8e, %.12f, %.8e \n",L,pK,optimal_α-T(1),leak_EC/pK,Finite_SKR)
         close(file)
     end
 end
 
 
-for L in [1,10,30,50] #vcat(1,10:10:100)
+for L in 0:2:46 #vcat(1,2:2:46)
     Instance_bb84_pK(L,f,N,v;T)
 end
+
+
+
+
