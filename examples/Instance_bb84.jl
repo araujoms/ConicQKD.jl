@@ -240,32 +240,12 @@ function conic_bb84(
 end
 
 
-function FiniteSKR(α, finiteSKR_pars::FinitePars{T}) where {T<:AbstractFloat}
-    
-    @unpack η, N, pK, leak_EC, renyi, fast  = finiteSKR_pars
-    # Load the epsilons
-    @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
-
-    # Total correction
-    correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA)/N
-
-    # Conic program
-    h_renyi = conic_bb84(v,η,N, pK, ϵcompPE,α;renyi, fast)
-
-    FiniteSecretKey = h_renyi - correction
-
-    # Some log info
-    @printf("α-1 = %.5e, SKR = %.2e \n", α-1, FiniteSecretKey)
-
-    return FiniteSecretKey
-end
-
 function Finite_bb84(L::Integer, N::T, pK::T; renyi::Bool = false, fast::Bool = false) where {T<:AbstractFloat}
     
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
 
-    η=10^(-0.02*L)
+    η=10^(-dB/10)
 
     # Calculate EC cost per symbol
     qZ = qberZ(v, η, pK)
