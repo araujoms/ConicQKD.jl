@@ -21,11 +21,11 @@ Ghat = W'*G_top
 Z_top = [kron(proj(i,3),I(6)) for i=1:2]
 ZG_top = [Zi*G_top for Zi in Z_top]
 ZGhat = Vector{Matrix{Float64}}(undef,2)
-for i=1:2
-    λ,U = eigen(ZG_top[i]*ZG_top[i]')
-    idx_nonzero = findall(>(1e-10), λ)
+λ,U = eigen(sum(ZG_top[i]*ZG_top[i]' for i in 1:2))
+idx_nonzero = findall(>(1e-10), λ)
+for i in 1:2
     ZGhat[i]=U[:,idx_nonzero]'*ZG_top[i]
-end
+end    
 ZGhat
 
 # Mateus suggestion of the facial reducted map
