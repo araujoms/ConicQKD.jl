@@ -184,16 +184,27 @@ function conic_bb84(
             β = inv(α) ; S= I(6)
             ZGhat_top = [sqrt(pK)*kron(proj(i),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)') for i=1:2]
             @constraint(model, [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, ZGhat_top, 1 + vec_dim;S))
+            sβ = β < 1 ? -1 : 1
+            @constraint(model, [h_QKD * (β - 1), 1, 1 - real(tr(G_top*ρAB*G_top')) + sβ * u] in MOI.ExponentialCone())
+            @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
         else
-            β = inv(2 - inv(α))
-        #     @variable(model, σAB[1:d, 1:d], Hermitian)
-        #     # @constraint(model, tr(σAB) == 1)
-        #     σAB_vec = svec(σAB)
-        #     # @constraint(model, [u; ρAB_vec;σAB_vec]) in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + 2*length(ρ_vec); blocks)
+            β = α*inv(2α-1)
+            @variable(model, uTop); @variable(model, uBot)
+            @variable(model, ψAB[1:d, 1:d], Hermitian)
+            ψ_vec = svec(ψAB)
+            @constraint(model, tr(ψAB) == 1)
+            
+            Zhat_top = [kron(ket(r,2)*ket(r,3)', I(6)) for r=1:2]
+            STop = sum([kron(ket(i),kron(proj(i), ket(1,3)*ket(1)' + ket(2,3)*ket(2)')) for i=1:2])
+            @constraint(model, [uTop; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, Zhat_top, 1 + 2*length(ρAB_vec); S=STop))
+
+            Ghat_bottom = [kron(I(2), sqrt(1-pK)*(proj(1,3)+proj(2,3))+ proj(3,3))]
+            Zhat_bottom = [I(6)] ; SBot = I(6)
+            @constraint(model, [uBot; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_bottom, Zhat_bottom, 1 + 2*length(ρAB_vec); S=SBot))
+
+            sβ = β < 1 ? -1 : 1
+            @constraint(model, [h_QKD * (β - 1), 1, sβ * (uTop + uBot)] in MOI.ExponentialCone())
         end
-        sβ = β < 1 ? -1 : 1
-        @constraint(model, [h_QKD * (β - 1), 1, 1 - real(tr(G_top*ρAB*G_top')) + sβ * u] in MOI.ExponentialCone())
-        @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
     else
         throw("Not implemented yet")
         # @constraint(model, [Ψ; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhatperm, 1 + vec_dim; blocks))
@@ -230,6 +241,7 @@ function Finite_bb84(
     qZ = qberZ(v, η, pK)
     leak_EC = EC_cost_bb84(qZ, η, f, pK)
     
+    #---------------- Optimization of α paramter ---------------------------
     obj(αrenyi) = -conic_bb84(αrenyi,v,η,N, pK, ϵcompPE;renyi, fast)
 
     #ranges
@@ -278,9 +290,52 @@ function Instance_bb84(
     end
 end
 
-f=1.16; N = 1e9;  T = Float64;# pK=0.90;# pK = 0.95;#L= 20; 
+
+"Auxilialy function to optimize on pK (to be remove)"
+function Instance_bb84_pK(
+    dB::Real,
+    f::Real,
+    N::Real,
+    v:: Real;
+    T::DataType=Float64,
+    fast::Bool=true
+    )
+
+    # Enforce desired precision
+    f = T(f); N = T(N);
+
+    # Create output file
+    if fast==true
+        RATE_BB84 = "examples/data_bb84/varying_pK/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
+    else
+        RATE_BB84 = "examples/data_bb84/true_cone/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
+    end
+    file      = open(RATE_BB84,"a")
+    @printf(file,"f, N, nu \n")
+    @printf(file,"%.2f, %.2f, %.2f \n",f,log10(N),v)
+    @printf(file,"D, pK, a-1, leakEC, SKR, dual \n")
+    close(file)
+
+    # Start loop for various values of the distance
+    for pK=0.8:0.01:1 # ∈ vcat(1,10:10:40)
+        @printf("Values of pK: %d ---------\n",dB)
+        Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(dB, N,v, pK; renyi=true, fast)
+
+        # Record outputs
+        file = open(RATE_BB84,"a")
+         @printf(file,"%d, %.2f, %.8e, %.12f, %.8e, %.8e \n",dB,pK,optimal_α-T(1),leak_EC,Finite_SKR,dual)
+        close(file)
+    end
+end
+
+f=1.10; N = 1e9;  T = Float64;# pK=0.90;# pK = 0.95;#L= 20; 
 v=0.03; dimA = 2; dimB = 3
 
-Instance_bb84(f,N,v;T)
+# Instance_bb84(f,N,v;T)
+
+for dB=0:2:2
+    Instance_bb84_pK(dB,f,N,v;T, fast=true)
+end
+
 
 # L= 0; pK=0.90; η=1.; α= 2.80571e-05+1
