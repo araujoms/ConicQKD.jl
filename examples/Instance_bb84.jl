@@ -107,15 +107,6 @@ function qberZ(v::T, η::T, pK::T) where {T<:AbstractFloat}
     return p_error/p_click
 end
 
-"Probabilities for key generation with simulated state"
-function GEN_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat} 
-    ρ = alice_depol_loss(v,η)
-    A = alice_povm()
-    B = bob_povm(pK)
-    gen  = [real(tr(ρ*kron(a,b))) for a=A[1:2], b=B[1:5]]
-    return gen
-end
-
 "PE correlations with simulated state"
 function PE_probabilities_bb84(v::T, η::T,pK::T) where {T<:AbstractFloat} 
     ρ = alice_depol_loss(v,η)
@@ -189,15 +180,21 @@ function conic_bb84(
             @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
         else
             β = α*inv(2α-1)
+            #variables
             @variable(model, uTop); @variable(model, uBot)
             @variable(model, ψAB[1:d, 1:d], Hermitian)
-            ψ_vec = svec(ψAB)
+            
+            #constraint
             @constraint(model, tr(ψAB) == 1)
             
+            ψ_vec = svec(ψAB)
+
+            # cone for click events
             Zhat_top = [kron(ket(r,2)*ket(r,3)', I(6)) for r=1:2]
             STop = sum([kron(ket(i),kron(proj(i), ket(1,3)*ket(1)' + ket(2,3)*ket(2)')) for i=1:2])
             @constraint(model, [uTop; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, Zhat_top, 1 + 2*length(ρAB_vec); S=STop))
 
+            # cone for no-click events
             Ghat_bottom = [kron(I(2), sqrt(1-pK)*(proj(1,3)+proj(2,3))+ proj(3,3))]
             Zhat_bottom = [I(6)] ; SBot = I(6)
             @constraint(model, [uBot; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_bottom, Zhat_bottom, 1 + 2*length(ρAB_vec); S=SBot))
@@ -240,12 +237,12 @@ function Finite_bb84(
     # Calculate EC cost per symbol
     qZ = qberZ(v, η, pK)
     leak_EC = EC_cost_bb84(qZ, η, f, pK)
-    
+
     #---------------- Optimization of α paramter ---------------------------
     obj(αrenyi) = -conic_bb84(αrenyi,v,η,N, pK, ϵcompPE;renyi, fast)
 
     #ranges
-    α_low = T(1); α_high = T(1.1) 
+    α_low = T(1+1e-8); α_high = T(1.1) 
 
     println("Starting optimization on α")
     sol = Optim.optimize(obj, α_low, α_high,Brent())
@@ -259,6 +256,7 @@ function Finite_bb84(
     return SKR_Max, optimal_renyi, leak_EC, h_renyi
 end
 
+"Function to obtain and save the key rates"
 function Instance_bb84(
     f::Real,
     N::Real,
@@ -270,7 +268,7 @@ function Instance_bb84(
     f = T(f); N = T(N);
 
     # Create output file
-    RATE_BB84 = "OptRate_bb84_N1e"*string(count(==('0'), string(Int(N))))*".csv"
+    RATE_BB84 = "OptRate_bb84_f"*string(f)*"_N1e"*string(count(==('0'), string(Int(N))))*".csv"
     file      = open(RATE_BB84,"a")
     @printf(file,"f, N, nu \n")
     @printf(file,"%.2f, %.2f, %.2f \n",f,log10(N),v)
@@ -278,7 +276,7 @@ function Instance_bb84(
     close(file)
 
     # Start loop for various values of the distance
-    for L=0:2:46 # ∈ vcat(1,10:10:40)
+    for L=0:2:36 # ∈ vcat(1,10:10:40)
         @printf("Distance: %d ---------\n",L)
         pK =optimal_pK(f,N,L)
         Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(L, N,v, pK; renyi = true, fast =true)
@@ -291,7 +289,7 @@ function Instance_bb84(
 end
 
 
-"Auxilialy function to optimize on pK (to be remove)"
+"Auxiliary function to optimize on pK (to be remove)"
 function Instance_bb84_pK(
     dB::Real,
     f::Real,
@@ -306,7 +304,7 @@ function Instance_bb84_pK(
 
     # Create output file
     if fast==true
-        RATE_BB84 = "examples/data_bb84/varying_pK/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
+        RATE_BB84 = "examples/data_bb84/varying_pK/Kleak_f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
     else
         RATE_BB84 = "examples/data_bb84/true_cone/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
     end
@@ -316,8 +314,13 @@ function Instance_bb84_pK(
     @printf(file,"D, pK, a-1, leakEC, SKR, dual \n")
     close(file)
 
+    if dB <10
+        range = 0.8:0.01:1
+    else
+        range =0.05:0.01:0.8
+    end
     # Start loop for various values of the distance
-    for pK=0.8:0.01:1 # ∈ vcat(1,10:10:40)
+    for pK=range# ∈ vcat(1,10:10:40)
         @printf("Values of pK: %d ---------\n",dB)
         Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(dB, N,v, pK; renyi=true, fast)
 
@@ -333,9 +336,8 @@ v=0.03; dimA = 2; dimB = 3
 
 # Instance_bb84(f,N,v;T)
 
-for dB=0:2:2
-    Instance_bb84_pK(dB,f,N,v;T, fast=true)
+for dB=[0]
+    Instance_bb84_pK(dB,f,N,v;T, fast=false)
 end
-
 
 # L= 0; pK=0.90; η=1.; α= 2.80571e-05+1
