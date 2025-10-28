@@ -13,6 +13,7 @@ using Parameters
 
 include("Utils_data_bb84.jl")
 
+#TODO: CHEQUEAR
 @with_kw struct epsilon_coeffs{T<:AbstractFloat}
     ϵCR ::T = 1e-11
     ϵPA ::T = 9e-11
@@ -54,7 +55,7 @@ function bob_povm(pK::T) where {T<:AbstractFloat}
 end
 
 "Full Alice's and Bob's POVM"
-function ΠAB(pK::T) where {T<:AbstractFloat}
+function POVM_AB(pK::T) where {T<:AbstractFloat}
     A = alice_povm()
     B = bob_povm(pK)
     povm = [kron(a,b) for a in A for b in B]
@@ -110,15 +111,15 @@ end
 "PE correlations with simulated state"
 function PE_probabilities_bb84(v::T, η::T,pK::T) where {T<:AbstractFloat} 
     ρ = alice_depol_loss(v,η)
-    n = size(ΠAB(pK),1)
-    expval = [real(tr(ρ*ΠAB(pK)[i])) for i=Int(n/2 + 1):n]
+    n = size(POVM_AB(pK),1)
+    expval = [real(tr(ρ*POVM_AB(pK)[i])) for i=(div(n,2) + 1):n]
     return expval
 end
 
 "PE correlations with constraint state"
 function constraint_probabilities_bb84(ρ::AbstractMatrix, pK::T) where {T<:AbstractFloat}
-    n = size(ΠAB(pK),1)
-    return real(dot.(Ref(ρ),ΠAB(pK)[Int(n/2 + 1):n]))
+    n = size(POVM_AB(pK),1)
+    return real(dot.(Ref(ρ),POVM_AB(pK)[Int(n/2 + 1):n]))
 end
 
 function conic_bb84(
@@ -132,14 +133,14 @@ function conic_bb84(
     fast   ::Bool = true
     ) where {T<:AbstractFloat}
 
-    d = dimA*dimB ; n = size(ΠAB(pK),1)
+    d = dimA*dimB ; n = size(POVM_AB(pK),1)
 
     model = GenericModel{T}()
     
     # Variables
     @variable(model, ρAB[1:d, 1:d], Hermitian)
-    @variable(model, qK ≥ 0)
-    @variable(model, q[1:Int(n/2)] ≥ 0) 
+    @variable(model, qK)
+    @variable(model, q[1:div(n,2)]) 
     @variable(model, h_QKD)
     @variable(model, h_KL)
 
@@ -151,13 +152,13 @@ function conic_bb84(
 
     # Constraints on exp vals via KL divergence
     p_ρAB = constraint_probabilities_bb84(ρAB, pK)*(1-pK) # PE probabilities
-    @constraint(model, [h_KL; vec(p_ρAB); pK; vec(q); qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
+    @constraint(model, [h_KL; p_ρAB; pK; q; qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q),false))
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
     δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
     p_sim = PE_probabilities_bb84(v, η, pK)*(1-pK)
-    @constraint(model, [δ; vec(q) - vec(p_sim); qK - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
+    @constraint(model, [δ; q - p_sim; qK - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q),true))
 
     # Key map
     G_top = gkrausTop(pK)
@@ -182,7 +183,7 @@ function conic_bb84(
             β = α*inv(2α-1)
             #variables
             @variable(model, uTop); @variable(model, uBot)
-            @variable(model, ψAB[1:d, 1:d], Hermitian)
+            @variable(model, ψAB[1:d*3, 1:d*3], Hermitian) 
             
             #constraint
             @constraint(model, tr(ψAB) == 1)
@@ -196,11 +197,13 @@ function conic_bb84(
 
             # cone for no-click events
             Ghat_bottom = [kron(I(2), sqrt(1-pK)*(proj(1,3)+proj(2,3))+ proj(3,3))]
-            Zhat_bottom = [I(6)] ; SBot = I(6)
+            Zhat_bottom = [kron(ket(3,3),I(6))] 
+            SBot = I(6)
             @constraint(model, [uBot; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_bottom, Zhat_bottom, 1 + 2*length(ρAB_vec); S=SBot))
 
             sβ = β < 1 ? -1 : 1
             @constraint(model, [h_QKD * (β - 1), 1, sβ * (uTop + uBot)] in MOI.ExponentialCone())
+            @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
         end
     else
         throw("Not implemented yet")
@@ -220,8 +223,9 @@ end
 
 "Finite corrections for the final key rate"
 Finite_corrections(α::T, ϵPE::T, ϵPA::T, ϵCR::T) where {T<:AbstractFloat} =
-    (2*log(1/ϵPA))* α/(α-T(1)) - 2 + ceil(log2(inv(ϵCR)))
+    (log2(inv(ϵPA)) )* α/(α-T(1)) - 2 + ceil( log2(inv(ϵCR)) )
 
+    # (log2(inv(1e-80/2)) )* α/(α-T(1)) - 2 + ceil( log2(inv(1e-80/2)) )
 function Finite_bb84(
     dB::Integer, 
     N::T,
@@ -304,7 +308,7 @@ function Instance_bb84_pK(
 
     # Create output file
     if fast==true
-        RATE_BB84 = "examples/data_bb84/varying_pK/Kleak_f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
+        RATE_BB84 = "examples/data_bb84/varying_pK/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
     else
         RATE_BB84 = "examples/data_bb84/true_cone/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
     end
@@ -331,7 +335,7 @@ function Instance_bb84_pK(
     end
 end
 
-f=1.10; N = 1e9;  T = Float64;# pK=0.90;# pK = 0.95;#L= 20; 
+f=1.16; N = 1e9;  T = Float64;# pK=0.90;# pK = 0.95;#L= 20; 
 v=0.03; dimA = 2; dimB = 3
 
 # Instance_bb84(f,N,v;T)
