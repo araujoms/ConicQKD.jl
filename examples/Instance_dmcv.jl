@@ -242,8 +242,8 @@ function hbe_dmcv_general(
 
     # Variables
     @variable(model, ρAB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
-    @variable(model, q_K ≥ 0)
-    @variable(model, q[1:4,1:6] ≥ 0)
+    @variable(model, q_K )
+    @variable(model, q[1:4,1:6] )
     @variable(model, h_QKD)
     @variable(model, h_KL)
 

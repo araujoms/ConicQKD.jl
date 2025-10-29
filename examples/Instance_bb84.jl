@@ -5,6 +5,7 @@ using JuMP
 using ConicQKD
 using Ket
 using Optim
+using MathOptInterface
 import Hypatia
 import Hypatia.Cones
 import JLD2
@@ -146,7 +147,7 @@ function conic_bb84(
 
     # Constraints on the state
     @constraint(model, partial_trace(ρAB, 2, [2, 3])==I(2)/2)
-
+    # @constraint(model, tr(ρAB)==1)
     # Constraints on probabilities
     @constraint(model, sum(q) + qK == 1 )
 
@@ -164,8 +165,6 @@ function conic_bb84(
     G_top = gkrausTop(pK)
     Ghat_top =  sqrt(pK)*[kron(I(2),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)')]
     
-    # blocks = [1:3,4:6] 
-
     vec_dim = Cones.svec_length(Complex, d)
     ρAB_vec = svec(ρAB)
 
@@ -193,13 +192,13 @@ function conic_bb84(
             # cone for click events
             Zhat_top = [kron(ket(r,2)*ket(r,3)', I(6)) for r=1:2]
             STop = sum([kron(ket(i),kron(proj(i), ket(1,3)*ket(1)' + ket(2,3)*ket(2)')) for i=1:2])
-            @constraint(model, [uTop; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, Zhat_top, 1 + 2*length(ρAB_vec); S=STop))
+            @constraint(model, [uTop; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, Zhat_top, 1 + length(ρAB_vec)+length(ψ_vec); S=STop))
 
             # cone for no-click events
             Ghat_bottom = [kron(I(2), sqrt(1-pK)*(proj(1,3)+proj(2,3))+ proj(3,3))]
-            Zhat_bottom = [kron(ket(3,3),I(6))] 
+            Zhat_bottom = [kron(ket(3,3)',I(6))] 
             SBot = I(6)
-            @constraint(model, [uBot; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_bottom, Zhat_bottom, 1 + 2*length(ρAB_vec); S=SBot))
+            @constraint(model, [uBot; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_bottom, Zhat_bottom, 1 + length(ρAB_vec)+length(ψ_vec); S=SBot))
 
             sβ = β < 1 ? -1 : 1
             @constraint(model, [h_QKD * (β - 1), 1, sβ * (uTop + uBot)] in MOI.ExponentialCone())
@@ -242,16 +241,50 @@ function Finite_bb84(
     qZ = qberZ(v, η, pK)
     leak_EC = EC_cost_bb84(qZ, η, f, pK)
 
-    #---------------- Optimization of α paramter ---------------------------
+    # #---------------- Optimization of α paramter ---------------------------
     obj(αrenyi) = -conic_bb84(αrenyi,v,η,N, pK, ϵcompPE;renyi, fast)
 
     #ranges
-    α_low = T(1+1e-8); α_high = T(1.1) 
+    α_low = T(1+1e-8); α_high = T(1.01) ; α0 = T(1+2e-5)
 
     println("Starting optimization on α")
-    sol = Optim.optimize(obj, α_low, α_high,Brent())
+    sol = Optim.optimize( obj, α_low, α_high,Brent() )
+
     optimal_renyi = sol.minimizer[1]
     h_renyi = -sol.minimum
+
+    # ------------------------------------------
+    # FINE SEARCH
+    α_min,α_max  = 1e-6, 0.01
+    n = 600 
+    α_grid =1 .+ α_min .* ((α_max/α_min) .^ (range(0, 1; length=n)))
+
+    h_renyi = 1e-9
+    optimal_renyi = α_min
+    decreasing_counter = 0 
+
+    println("Starting loop on α")
+
+    SKR_vals = [conic_bb84(α,v,η,N, pK, ϵcompPE;renyi, fast) for α in α_grid]
+
+    h_renyi, idx = findmax(SKR_vals)
+    optimal_renyi = α_grid[idx]
+    for α in α_grid
+        current_SKR = conic_bb84(v,η,N, pK, ϵcompPE,α;renyi, fast)
+        # If current value is better, update
+        if current_SKR >  h_renyi
+            h_renyi= current_SKR
+            optimal_renyi = α
+            decreasing_counter = 0
+        else
+            decreasing_counter += 1
+        end
+        if decreasing_counter ≥ 10
+            println("Early stop at α = $(round(α, digits=6)) — maximum reached near α = $(round(optimal_renyi, digits=6))")
+            break
+        end
+    end
+    #------------------------------------------
 
     correction = leak_EC + Finite_corrections(optimal_renyi, ϵPE, ϵPA, ϵCR)/N
     SKR_Max = h_renyi - correction
@@ -282,7 +315,7 @@ function Instance_bb84(
     # Start loop for various values of the distance
     for L=0:2:36 # ∈ vcat(1,10:10:40)
         @printf("Distance: %d ---------\n",L)
-        pK =optimal_pK(f,N,L)
+        pK = 0.9 #optimal_pK(f,N,L)
         Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(L, N,v, pK; renyi = true, fast =true)
 
         # Record outputs
@@ -319,12 +352,49 @@ function Instance_bb84_pK(
     close(file)
 
     if dB <10
-        range = 0.8:0.01:1
+        range = 0.85:0.01:0.98
     else
         range =0.05:0.01:0.8
     end
     # Start loop for various values of the distance
     for pK=range# ∈ vcat(1,10:10:40)
+        @printf("Values of pK: %d ---------\n",dB)
+        Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(dB, N,v, pK; renyi=true, fast)
+
+        # Record outputs
+        file = open(RATE_BB84,"a")
+         @printf(file,"%d, %.2f, %.8e, %.12f, %.8e, %.8e \n",dB,pK,optimal_α-T(1),leak_EC,Finite_SKR,dual)
+        close(file)
+    end
+end
+
+"Auxiliary function to optimize on pK (to be remove)"
+function Instance_bb84_alpha(
+    dB::Real,
+    f::Real,
+    N::Real,
+    v:: Real;
+    T::DataType=Float64,
+    fast::Bool=true
+    )
+
+    # Enforce desired precision
+    f = T(f); N = T(N);
+
+    # Create output file
+    if fast==true
+        RATE_BB84 = "examples/data_bb84/varying_pK/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
+    else
+        RATE_BB84 = "examples/data_bb84/true_cone/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
+    end
+    file      = open(RATE_BB84,"a")
+    @printf(file,"f, N, nu \n")
+    @printf(file,"%.2f, %.2f, %.2f \n",f,log10(N),v)
+    @printf(file,"D, pK, a-1, leakEC, SKR, dual \n")
+    close(file)
+
+    # Start loop for various values of the distance
+    for α=range# ∈ vcat(1,10:10:40)
         @printf("Values of pK: %d ---------\n",dB)
         Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(dB, N,v, pK; renyi=true, fast)
 
@@ -344,4 +414,4 @@ for dB=[0]
     Instance_bb84_pK(dB,f,N,v;T, fast=false)
 end
 
-# L= 0; pK=0.90; η=1.; α= 2.80571e-05+1
+# L= 0; pK=0.91; η=1.; α= 5.84726152e-05+1
