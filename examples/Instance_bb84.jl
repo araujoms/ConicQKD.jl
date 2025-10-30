@@ -147,7 +147,7 @@ function conic_bb84(
 
     # Constraints on the state
     @constraint(model, partial_trace(ρAB, 2, [2, 3])==I(2)/2)
-    # @constraint(model, tr(ρAB)==1)
+
     # Constraints on probabilities
     @constraint(model, sum(q) + qK == 1 )
 
@@ -169,44 +169,42 @@ function conic_bb84(
     ρAB_vec = svec(ρAB)
 
     # Conic program
-    if renyi
+    if fast==true
+        println("Running fast cone... \n")
+        β = inv(α) ; S= I(6)
         @variable(model, u)
-        if fast
-            β = inv(α) ; S= I(6)
-            ZGhat_top = [sqrt(pK)*kron(proj(i),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)') for i=1:2]
-            @constraint(model, [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, ZGhat_top, 1 + vec_dim;S))
-            sβ = β < 1 ? -1 : 1
-            @constraint(model, [h_QKD * (β - 1), 1, 1 - real(tr(G_top*ρAB*G_top')) + sβ * u] in MOI.ExponentialCone())
-            @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
-        else
-            β = α*inv(2α-1)
-            #variables
-            @variable(model, uTop); @variable(model, uBot)
-            @variable(model, ψAB[1:d*3, 1:d*3], Hermitian) 
-            
-            #constraint
-            @constraint(model, tr(ψAB) == 1)
-            
-            ψ_vec = svec(ψAB)
 
-            # cone for click events
-            Zhat_top = [kron(ket(r,2)*ket(r,3)', I(6)) for r=1:2]
-            STop = sum([kron(ket(i),kron(proj(i), ket(1,3)*ket(1)' + ket(2,3)*ket(2)')) for i=1:2])
-            @constraint(model, [uTop; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, Zhat_top, 1 + length(ρAB_vec)+length(ψ_vec); S=STop))
+        ZGhat_top = [sqrt(pK)*kron(proj(i),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)') for i=1:2]
+        @constraint(model, [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, ZGhat_top, 1 + vec_dim;S))
+        sβ = β < 1 ? -1 : 1
+        @constraint(model, [h_QKD * (β - 1), 1, 1 - real(tr(G_top*ρAB*G_top')) + sβ * u] in MOI.ExponentialCone())
+        @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
+    elseif fast==false
+        println("Running true cone... \n")
+        β = α*inv(2α-1)
+        #variables
+        @variable(model, uTop); @variable(model, uBot)
+        @variable(model, ψAB[1:d*3, 1:d*3], Hermitian) 
+        
+        #constraint
+        @constraint(model, tr(ψAB) == 1)
+        
+        ψ_vec = svec(ψAB)
 
-            # cone for no-click events
-            Ghat_bottom = [kron(I(2), sqrt(1-pK)*(proj(1,3)+proj(2,3))+ proj(3,3))]
-            Zhat_bottom = [kron(ket(3,3)',I(6))] 
-            SBot = I(6)
-            @constraint(model, [uBot; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_bottom, Zhat_bottom, 1 + length(ρAB_vec)+length(ψ_vec); S=SBot))
+        # cone for click events
+        Zhat_top = [kron(ket(r,2)*ket(r,3)', I(6)) for r=1:2]
+        STop = sum([kron(ket(i),kron(proj(i), ket(1,3)*ket(1)' + ket(2,3)*ket(2)')) for i=1:2])
+        @constraint(model, [uTop; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, Zhat_top, 1 + length(ρAB_vec)+length(ψ_vec); S=STop))
 
-            sβ = β < 1 ? -1 : 1
-            @constraint(model, [h_QKD * (β - 1), 1, sβ * (uTop + uBot)] in MOI.ExponentialCone())
-            @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
-        end
-    else
-        throw("Not implemented yet")
-        # @constraint(model, [Ψ; ρ_vec] in EpiQKDTriCone{T,R}(Ghat, Zhatperm, 1 + vec_dim; blocks))
+        # cone for no-click events
+        Ghat_bottom = [kron(I(2), sqrt(1-pK)*(proj(1,3)+proj(2,3))+ proj(3,3))]
+        Zhat_bottom = [kron(ket(3,3)',I(6))] 
+        SBot = I(6)
+        @constraint(model, [uBot; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_bottom, Zhat_bottom, 1 + length(ρAB_vec)+length(ψ_vec); S=SBot))
+
+        sβ = β < 1 ? -1 : 1
+        @constraint(model, [h_QKD * (β - 1), 1, sβ * (uTop + uBot)] in MOI.ExponentialCone())
+        @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
     end
 
     # Optimize
@@ -225,12 +223,13 @@ Finite_corrections(α::T, ϵPE::T, ϵPA::T, ϵCR::T) where {T<:AbstractFloat} =
     (log2(inv(ϵPA)) )* α/(α-T(1)) - 2 + ceil( log2(inv(ϵCR)) )
 
     # (log2(inv(1e-80/2)) )* α/(α-T(1)) - 2 + ceil( log2(inv(1e-80/2)) )
+
 function Finite_bb84(
     dB::Integer, 
     N::T,
     v::T,
     pK::T; 
-    renyi::Bool = false, fast::Bool = false) where {T<:AbstractFloat}
+    renyi::Bool = true, fast::Bool = false) where {T<:AbstractFloat}
     
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
@@ -254,36 +253,19 @@ function Finite_bb84(
     h_renyi = -sol.minimum
 
     # ------------------------------------------
-    # FINE SEARCH
-    α_min,α_max  = 1e-6, 0.01
-    n = 600 
-    α_grid =1 .+ α_min .* ((α_max/α_min) .^ (range(0, 1; length=n)))
+    # # FINE SEARCH
+    # α_min,α_max  = 1e-7, 0.01
+    # n = 300 
+    # α_grid =1 .+ α_min .* ((α_max/α_min) .^ (range(0, 1; length=n)))
 
-    h_renyi = 1e-9
-    optimal_renyi = α_min
-    decreasing_counter = 0 
+    # println("Starting loop on α")
 
-    println("Starting loop on α")
+    # SKR_vals = [conic_bb84(α,v,η,N, pK, ϵcompPE;renyi, fast) for α in α_grid]
+    # SKR_vals = filter(!isnan, SKR_vals)
 
-    SKR_vals = [conic_bb84(α,v,η,N, pK, ϵcompPE;renyi, fast) for α in α_grid]
+    # h_renyi, idx = findmax(SKR_vals)
+    # optimal_renyi = α_grid[idx]
 
-    h_renyi, idx = findmax(SKR_vals)
-    optimal_renyi = α_grid[idx]
-    for α in α_grid
-        current_SKR = conic_bb84(v,η,N, pK, ϵcompPE,α;renyi, fast)
-        # If current value is better, update
-        if current_SKR >  h_renyi
-            h_renyi= current_SKR
-            optimal_renyi = α
-            decreasing_counter = 0
-        else
-            decreasing_counter += 1
-        end
-        if decreasing_counter ≥ 10
-            println("Early stop at α = $(round(α, digits=6)) — maximum reached near α = $(round(optimal_renyi, digits=6))")
-            break
-        end
-    end
     #------------------------------------------
 
     correction = leak_EC + Finite_corrections(optimal_renyi, ϵPE, ϵPA, ϵCR)/N
@@ -325,7 +307,7 @@ function Instance_bb84(
     end
 end
 
-
+############### REMOVE FUNCTIONS BELOW ################################
 "Auxiliary function to optimize on pK (to be remove)"
 function Instance_bb84_pK(
     dB::Real,
@@ -341,7 +323,7 @@ function Instance_bb84_pK(
 
     # Create output file
     if fast==true
-        RATE_BB84 = "examples/data_bb84/varying_pK/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
+        RATE_BB84 = "examples/data_bb84/varying_pK/delta0_f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
     else
         RATE_BB84 = "examples/data_bb84/true_cone/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
     end
@@ -354,10 +336,10 @@ function Instance_bb84_pK(
     if dB <10
         range = 0.85:0.01:0.98
     else
-        range =0.05:0.01:0.8
+        range =0.06:0.01:0.8
     end
     # Start loop for various values of the distance
-    for pK=range# ∈ vcat(1,10:10:40)
+    for pK=0.6:0.01:0.98# ∈ vcat(1,10:10:40)
         @printf("Values of pK: %d ---------\n",dB)
         Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(dB, N,v, pK; renyi=true, fast)
 
@@ -368,7 +350,32 @@ function Instance_bb84_pK(
     end
 end
 
-"Auxiliary function to optimize on pK (to be remove)"
+
+function Finite_bb84_alpha(
+    α::T,
+    dB::Integer, 
+    N::T,
+    v::T,
+    pK::T; 
+    renyi::Bool = true, fast::Bool = false) where {T<:AbstractFloat}
+    
+    # Load the epsilons
+    @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
+
+    η=10^(-dB/10)
+
+    # Calculate EC cost per symbol
+    qZ = qberZ(v, η, pK)
+    leak_EC = EC_cost_bb84(qZ, η, f, pK)
+    h_renyi = conic_bb84(α,v,η,N, pK, ϵcompPE;renyi, fast)
+    correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA, ϵCR)/N
+    SKR_Max = h_renyi - correction
+    @printf("Optimum found for α-1 = %.5e giving a key rate of SKR = %.2e \n", α-1, SKR_Max)
+
+    return SKR_Max, leak_EC, h_renyi
+end
+
+"Auxiliary function to optimize on α (to be remove)"
 function Instance_bb84_alpha(
     dB::Real,
     f::Real,
@@ -379,13 +386,13 @@ function Instance_bb84_alpha(
     )
 
     # Enforce desired precision
-    f = T(f); N = T(N);
+    f = T(f); N = T(N); pK=0.9; 
 
     # Create output file
     if fast==true
-        RATE_BB84 = "examples/data_bb84/varying_pK/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
+        RATE_BB84 = "examples/data_bb84/varying_alpha/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
     else
-        RATE_BB84 = "examples/data_bb84/true_cone/f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
+        RATE_BB84 = "examples/data_bb84/varying_alpha/Renyi_f"*string(f)*"_Optim_bb84_N1e"*string(count(==('0'), string(Int(N))))*"_dB"*string(dB)*".csv"
     end
     file      = open(RATE_BB84,"a")
     @printf(file,"f, N, nu \n")
@@ -394,13 +401,17 @@ function Instance_bb84_alpha(
     close(file)
 
     # Start loop for various values of the distance
-    for α=range# ∈ vcat(1,10:10:40)
-        @printf("Values of pK: %d ---------\n",dB)
-        Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(dB, N,v, pK; renyi=true, fast)
+
+    b = T(2e-8)
+    for i = 1:40
+        b += b
+        α = T(1) + b
+        @printf("Values of α: %.8e ---------\n", α)
+        Finite_SKR, leak_EC, dual  = Finite_bb84_alpha(α,dB, N,v, pK; renyi=true, fast)
 
         # Record outputs
         file = open(RATE_BB84,"a")
-         @printf(file,"%d, %.2f, %.8e, %.12f, %.8e, %.8e \n",dB,pK,optimal_α-T(1),leak_EC,Finite_SKR,dual)
+         @printf(file,"%d, %.2f, %.8e, %.12f, %.8e, %.8e \n",dB,pK,α-T(1),leak_EC,Finite_SKR,dual)
         close(file)
     end
 end
@@ -410,8 +421,12 @@ v=0.03; dimA = 2; dimB = 3
 
 # Instance_bb84(f,N,v;T)
 
-for dB=[0]
+# Instance_bb84_alpha(0,f,N,v;T, fast=false)
+
+for dB=[0,8,16] #
     Instance_bb84_pK(dB,f,N,v;T, fast=false)
 end
 
-# L= 0; pK=0.91; η=1.; α= 5.84726152e-05+1
+# L= 0; pK=0.91; η=1.;  α=1.00004000 5.84726152e-05+1
+
+
