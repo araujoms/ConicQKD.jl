@@ -1,11 +1,8 @@
-import Pkg
-Pkg.activate(".")
 using LinearAlgebra
 using JuMP
 using ConicQKD
 using Ket
 using Optim
-using MathOptInterface
 import Hypatia
 import Hypatia.Cones
 import JLD2
@@ -14,12 +11,11 @@ using Parameters
 
 include("Utils_data_bb84.jl")
 
-#TODO: CHEQUEAR
 @with_kw struct epsilon_coeffs{T<:AbstractFloat}
-    ϵCR ::T = 1e-11
-    ϵPA ::T = 9e-11
-    ϵPE ::T = 9e-11
-    ϵcompPE::T = 9e-11
+    ϵCR::T = inv(T(10^11))
+    ϵPA::T = 9inv(T(10^11))
+    ϵPE::T = 9inv(T(10^11))
+    ϵcompPE::T = 9inv(T(10^11))
 end
 
 "Alice state after depolarization"
@@ -67,8 +63,8 @@ end
 function zkraus() 
     QB_Z = (proj(1,3)+ proj(2,3))
     QB_perp = proj(3,3)
-    Z = [kron(proj(1),QB_Z) + kron(I(2),QB_perp),
-         kron(proj(2),QB_Z)]
+    Z = [kron(proj(1,2),QB_Z) + kron(I(2),QB_perp),
+         kron(proj(2,2),QB_Z)]
     return Z
 end
 
@@ -85,7 +81,7 @@ end
 "Kraus operator for the key map"
 function gkrausTop(pK::T) where {T<:AbstractFloat} 
     QB_Z = proj(1,3)+proj(2,3) 
-    G = sqrt(pK)*sum([kron(ket(i,3),kron(proj(i),QB_Z)) for i=1:2])
+    G = sqrt(pK)*sum(kron(ket(i,3),kron(proj(i,2),QB_Z)) for i=1:2)
     return  G
 end  
 
@@ -104,8 +100,8 @@ function qberZ(v::T, η::T, pK::T) where {T<:AbstractFloat}
     A = alice_povm()
     B = bob_povm(pK)
     ρ = alice_depol_loss(v,η)
-    p_error = sum([real(tr(kron(A[i],B[j])*ρ)) for i in 1:2, j in 1:2 if i != j])
-    p_click = sum([real(tr(kron(A[i],B[j])*ρ)) for i in 1:2, j in 1:2])
+    p_error = sum(real(dot(kron(A[i],B[j]),ρ)) for i in 1:2, j in 1:2 if i != j)
+    p_click = sum(real(dot(kron(A[i],B[j]),ρ)) for i in 1:2, j in 1:2)
     return p_error/p_click
 end
 
@@ -113,14 +109,14 @@ end
 function PE_probabilities_bb84(v::T, η::T,pK::T) where {T<:AbstractFloat} 
     ρ = alice_depol_loss(v,η)
     n = size(POVM_AB(pK),1)
-    expval = [real(tr(ρ*POVM_AB(pK)[i])) for i=(div(n,2) + 1):n]
+    expval = [real(dot(ρ,POVM_AB(pK)[i])) for i=(div(n,2) + 1):n]
     return expval
 end
 
 "PE correlations with constraint state"
 function constraint_probabilities_bb84(ρ::AbstractMatrix, pK::T) where {T<:AbstractFloat}
     n = size(POVM_AB(pK),1)
-    return real(dot.(Ref(ρ),POVM_AB(pK)[Int(n/2 + 1):n]))
+    return real(dot.(Ref(ρ),POVM_AB(pK)[div(n, 2) + 1:n]))
 end
 
 function conic_bb84(
@@ -134,6 +130,8 @@ function conic_bb84(
     fast   ::Bool = true
     ) where {T<:AbstractFloat}
 
+    dimA = 2
+    dimB = 3
     d = dimA*dimB ; n = size(POVM_AB(pK),1)
 
     model = GenericModel{T}()
@@ -146,7 +144,7 @@ function conic_bb84(
     @variable(model, h_KL)
 
     # Constraints on the state
-    @constraint(model, partial_trace(ρAB, 2, [2, 3])==I(2)/2)
+    @constraint(model, partial_trace(ρAB, 2, [2, 3])==Hermitian(I(2)/2))
 
     # Constraints on probabilities
     @constraint(model, sum(q) + qK == 1 )
@@ -193,7 +191,7 @@ function conic_bb84(
 
         # cone for click events
         Zhat_top = [kron(ket(r,2)*ket(r,3)', I(6)) for r=1:2]
-        STop = sum([kron(ket(i),kron(proj(i), ket(1,3)*ket(1)' + ket(2,3)*ket(2)')) for i=1:2])
+        STop = kron(sum(kron(ket(i,2),proj(i,2)) for i ∈ 1:2), sum(ket(i,3)*ket(i,2)' for i ∈ 1:2))
         @constraint(model, [uTop; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, Zhat_top, 1 + length(ρAB_vec)+length(ψ_vec); S=STop))
 
         # cone for no-click events
@@ -204,7 +202,7 @@ function conic_bb84(
 
         sβ = β < 1 ? -1 : 1
         @constraint(model, [h_QKD * (β - 1), 1, sβ * (uTop + uBot)] in MOI.ExponentialCone())
-        @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
+        @objective(model, Min, α*inv(log(T(2))*(α-1))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
     end
 
     # Optimize
@@ -220,7 +218,7 @@ end
 
 "Finite corrections for the final key rate"
 Finite_corrections(α::T, ϵPE::T, ϵPA::T, ϵCR::T) where {T<:AbstractFloat} =
-    (log2(inv(ϵPA)) )* α/(α-T(1)) - 2 + ceil( log2(inv(ϵCR)) )
+    (log2(inv(ϵPA)) )* α/(α-1) - 2 + ceil( log2(inv(ϵCR)) )
 
     # (log2(inv(1e-80/2)) )* α/(α-T(1)) - 2 + ceil( log2(inv(1e-80/2)) )
 
@@ -228,13 +226,14 @@ function Finite_bb84(
     dB::Integer, 
     N::T,
     v::T,
-    pK::T; 
+    pK::T,
+    f::T;
     renyi::Bool = true, fast::Bool = false) where {T<:AbstractFloat}
     
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
 
-    η=10^(-dB/10)
+    η=10^(-T(dB)/10)
 
     # Calculate EC cost per symbol
     qZ = qberZ(v, η, pK)
@@ -279,9 +278,9 @@ end
 function Instance_bb84(
     f::Real,
     N::Real,
-    v:: Real;
-    T::DataType=Float64
-    )
+    v::Real,
+    ::Type{T}
+    ) where {T}
 
     # Enforce desired precision
     f = T(f); N = T(N);
@@ -298,7 +297,7 @@ function Instance_bb84(
     for L=0:2:36 # ∈ vcat(1,10:10:40)
         @printf("Distance: %d ---------\n",L)
         pK = 0.9 #optimal_pK(f,N,L)
-        Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(L, N,v, pK; renyi = true, fast =true)
+        Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(L, N,v, pK, f; renyi = true, fast =true)
 
         # Record outputs
         file = open(RATE_BB84,"a")
@@ -313,10 +312,10 @@ function Instance_bb84_pK(
     dB::Real,
     f::Real,
     N::Real,
-    v:: Real;
-    T::DataType=Float64,
+    v::Real,
+    ::Type{T};
     fast::Bool=true
-    )
+    ) where {T}
 
     # Enforce desired precision
     f = T(f); N = T(N);
@@ -341,7 +340,7 @@ function Instance_bb84_pK(
     # Start loop for various values of the distance
     for pK=0.6:0.01:0.98# ∈ vcat(1,10:10:40)
         @printf("Values of pK: %d ---------\n",dB)
-        Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(dB, N,v, pK; renyi=true, fast)
+        Finite_SKR, optimal_α, leak_EC, dual  = Finite_bb84(dB, N,v, pK, f; renyi=true, fast)
 
         # Record outputs
         file = open(RATE_BB84,"a")
@@ -356,13 +355,14 @@ function Finite_bb84_alpha(
     dB::Integer, 
     N::T,
     v::T,
-    pK::T; 
+    pK::T,
+    f::T;
     renyi::Bool = true, fast::Bool = false) where {T<:AbstractFloat}
     
     # Load the epsilons
     @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
 
-    η=10^(-dB/10)
+    η=10^(-T(dB)/10)
 
     # Calculate EC cost per symbol
     qZ = qberZ(v, η, pK)
@@ -380,10 +380,10 @@ function Instance_bb84_alpha(
     dB::Real,
     f::Real,
     N::Real,
-    v:: Real;
-    T::DataType=Float64,
+    v::Real,
+    ::Type{T};
     fast::Bool=true
-    )
+    ) where {T}
 
     # Enforce desired precision
     f = T(f); N = T(N); pK=0.9; 
@@ -402,30 +402,30 @@ function Instance_bb84_alpha(
 
     # Start loop for various values of the distance
 
-    b = T(2e-8)
+    b = 2inv(T(10^8))
     for i = 1:40
         b += b
-        α = T(1) + b
+        α = 1 + b
         @printf("Values of α: %.8e ---------\n", α)
-        Finite_SKR, leak_EC, dual  = Finite_bb84_alpha(α,dB, N,v, pK; renyi=true, fast)
+        Finite_SKR, leak_EC, dual  = Finite_bb84_alpha(α,dB, N,v, pK, f; renyi=true, fast)
 
         # Record outputs
         file = open(RATE_BB84,"a")
-         @printf(file,"%d, %.2f, %.8e, %.12f, %.8e, %.8e \n",dB,pK,α-T(1),leak_EC,Finite_SKR,dual)
+         @printf(file,"%d, %.2f, %.8e, %.12f, %.8e, %.8e \n",dB,pK,α-1,leak_EC,Finite_SKR,dual)
         close(file)
     end
 end
 
-f=1.16; N = 1e9;  T = Float64;# pK=0.90;# pK = 0.95;#L= 20; 
-v=0.03; dimA = 2; dimB = 3
+#f=1.16; N = 1e9;  T = Float64;# pK=0.90;# pK = 0.95;#L= 20;
+#v=0.03;
 
 # Instance_bb84(f,N,v;T)
 
 # Instance_bb84_alpha(0,f,N,v;T, fast=false)
 
-for dB=[0,8,16] #
-    Instance_bb84_pK(dB,f,N,v;T, fast=false)
-end
+#for dB=[0,8,16] #
+#    Instance_bb84_pK(dB,f,N,v;T, fast=false)
+#end
 
 # L= 0; pK=0.91; η=1.;  α=1.00004000 5.84726152e-05+1
 
