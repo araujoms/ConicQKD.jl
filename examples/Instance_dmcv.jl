@@ -169,7 +169,7 @@ end
 function gkraus(::Type{T}, Nc::Integer) where {T<:Real}
     sqrtbasis = sqrt.(key_basis_dmcv(T, Nc))
     V = sum(kron(I(4), sqrtbasis[i], ket(i, 4)) for i ∈ 1:4)
-    return V
+    return [V]
 end
 
 function zkraus(Nc::Integer)
@@ -261,23 +261,23 @@ function hbe_dmcv_general(
     # Finite bounds via a Bretagnolle-Huber-Carol estimator
     δ = sqrt((2*25*log(2) - 2*log(ϵcompPE))/N)
     p_sim = simulated_probabilities_dmcv(Δs, Δ, amplitude, L)
-    @constraint(model, [δ; q[:] - (1-pK)*p_sim[:];q_K - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
+    @constraint(model, [δ; vec(q) - (1-pK) * vec(p_sim); q_K - pK] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q),true))
 
     # Key map
-    G    = gkraus(T,Nc)
-    Ghat = [I(4*Nc+4)]
-    Z    = zkraus(Nc)
-    Zhat = [Zi*G for Zi in Z]
+    G     = gkraus(T, Nc)
+    Ghat  = [I(4*Nc+4)]
+    Zhat  = zkraus(Nc)
+    ZGhat = [Zi * G[1] for Zi in Zhat]
 
 
     # Reduction for block-diagonal structures
     permutation = vec(reshape(1:16*(Nc+1), 4, 4 * (Nc + 1))')
     Zhatperm = [Zi[permutation, :] for Zi ∈ Zhat]
-    S = G[permutation, :]
+    ZGhatperm = [Zi[permutation, :] for Zi ∈ ZGhat]
+    S = G[1][permutation, :]
     block_size = 4 * (Nc + 1)
     blocks = [(i-1)*block_size+1:i*block_size for i ∈ 1:4]
 
-    vec_dim = Cones.svec_length(Complex, dim_ρAB)
     ρAB_vec = svec(ρAB)
 
     # Conic program
@@ -287,7 +287,7 @@ function hbe_dmcv_general(
         β = inv(α)
         @constraint(
             model,
-            [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhatperm, 1 + vec_dim; S, blocks)
+            [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, ZGhatperm, 1 + length(ρAB_vec); S, blocks)
         )
         sβ = β < 1 ? -1 : 1
         @constraint(model, [h_QKD, q_K, pK * sβ * u] in MOI.ExponentialCone())
@@ -295,13 +295,13 @@ function hbe_dmcv_general(
     else
         @constraint(model, [h_KL; vec(p_ρAB); pK; vec(q); q_K] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q),false))
         γ = inv(2 - inv(α))
-        dim_σSAB = size(Z[1],2)
+        dim_σSAB = size(Zhat[1],2)
         @variable(model, σSAB[1:dim_σSAB, 1:dim_σSAB], Hermitian)
         @constraint(model, tr(σSAB) == 1)
         σSAB_vec = svec(σSAB)
         @constraint(
             model,
-            [u; ρAB_vec; σSAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat, Z, 1 + length(ρAB_vec) + length(σSAB_vec); S=G, blocks)
+            [u; ρAB_vec; σSAB_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat, Zhatperm, 1 + length(ρAB_vec) + length(σSAB_vec); S, blocks)
         )
         sγ = γ < 1 ? -1 : 1
         @constraint(model, [h_QKD, 1, sγ * u] in MOI.ExponentialCone())
