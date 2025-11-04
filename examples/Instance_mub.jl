@@ -29,33 +29,26 @@ end
     m::Integer
     ϵcompPE::T
     leak_EC::T
-    analytical_mub::Bool
     fast::Bool
 end
 
-function FiniteSKR(renyiα, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
+function FiniteSKR(α, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
     
     # unpack pars
-    @unpack ϵPA, ϵPE, v, d, N, pK, m, ϵcompPE, leak_EC, analytical_mub, fast = finiteSKR_pars
+    @unpack ϵPA, ϵPE, v, d, N, pK, m, ϵcompPE, leak_EC, fast = finiteSKR_pars
     
     # Total correction
-    correction = leak_EC + Finite_corrections(renyiα, ϵPE, ϵPA)/N
+    correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA)/N
 
     # Conic program
-    h_renyi = hae_mub_general(v, d, N, pK, m, ϵcompPE, renyiα; analytical_mub, fast)
+    h_renyi = hae_mub_general(v, d, N, pK, m, ϵcompPE, α; fast)
 
     FiniteSecretKey = h_renyi - correction
 
     # Some log info
-    @printf("α-1 = %.5e, SKR = %.2e \n", renyiα-1, FiniteSecretKey)
+    @printf("α-1 = %.5e, SKR = %.2e \n", α-1, FiniteSecretKey)
 
     return FiniteSecretKey
-end
-
-
-function numerical_mubs(d)
-    mub_dict = JLD2.load("examples/mubs.jld2")
-    return mub_dict["mubs"][d]
 end
 
 function zgmap(rho::AbstractMatrix, d::Integer)
@@ -69,8 +62,8 @@ function zgkraus(d::Integer)
     return K
 end
 
-Finite_corrections(renyiα::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
-    (log(1/ϵPE)  + log(1/ϵPA))* renyiα/(renyiα-T(1)) - 2
+Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
+    (log(1/ϵPE)  + log(1/ϵPA))* α/(α-T(1)) - 2
 
 function EC_cost_mub(v::T, d::Integer, f::T, N::T, pK::T, ϵCR::T) where {T<:AbstractFloat}
     
@@ -98,23 +91,16 @@ function simulated_probabilities_mub(v::T, d::Integer, pK::T, m::Integer) where 
     return p_sim
 end
 
-function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, m::Integer; analytical_mub::Bool = false) where {T<: AbstractFloat}
-    if analytical_mub
-        mubs = mub(Complex{T}, d) # analytical MUBs from the package Ket
-    else
-        mubs = numerical_mubs(d)
-    end
-    if T != Float64 && !analytical_mub
-        @warn "To achieve higher precision analytical MUBs are needed."
-    end
+function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, m::Integer) where {T<: AbstractFloat}
+    mubs = mub(Complex{T}, d) # analytical MUBs from the package Ket
 
     # Vector of probabilities for each basis
     p   = [pK]
-    pPE = [(T(1)-pK)*inv(m-1) for i ∈ 1:m-1]
+    pPE = [(1-pK)*inv(m-1) for i ∈ 1:m-1]
     append!(p, pPE)
 
     # Probability of basis coincidence
-    p2 = ((T(1)-pK)*inv(m-1))^2
+    p2 = ((1-pK)*inv(m-1))^2
     b = [zeros(Complex{T}, d^2, d^2) for i ∈ 1:m]
     for i ∈ 1:m-1, j ∈ 1:d
         temp = ketbra(mubs[i+1][:, j]) # Note that we skip the first MUB
@@ -133,7 +119,7 @@ function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, m::
         b[m] += p[i]*p[j]*kron(tempA, transpose(tempB))
     end
 
-    cleanup!.(b)
+    cleanup!.(b; tol = sqrt(eps(T)))
     b = Hermitian.(b)
 
     return real(dot.(Ref(ρ), b))
@@ -146,8 +132,7 @@ function hae_mub_general(
     pK::T, 
     m::Integer, 
     ϵcompPE::T, 
-    renyiα::T; 
-    analytical_mub::Bool = false, 
+    α::T;
     fast::Bool = true
 ) where {T<:AbstractFloat}
     
@@ -159,29 +144,28 @@ function hae_mub_general(
 
     # Variables
     @variable(model, ρ[1:d^2, 1:d^2] ∈ hermitian_space)
-    @variable(model, q_K ≥ 0)
-    @variable(model, q[1:m] ≥ 0) 
+    @variable(model, q_K)
+    @variable(model, q[1:m])
     @variable(model, h_QKD)
     @variable(model, h_KL)
 
 
     # Simulated probabilities
     p_sim = simulated_probabilities_mub(v, d, pK, m)
-    p_ρAB = constraint_probabilities_mub(ρ, d, pK, m; analytical_mub)
+    p_ρAB = constraint_probabilities_mub(ρ, d, pK, m)
     
     # Constraint on states
-    @constraint(model, tr(ρ)==T(1))
+    @constraint(model, tr(ρ) == 1)
 
     # Constraints on probabilities
     @constraint(model, sum(q) + q_K == 1)
 
     # Constraints on exp vals via KL divergence
-    @constraint(model, [h_KL; p_ρAB[:];pK^2; q[:];q_K] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q[:]),false))
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator
-    C_alphbet = length(q[:])+1 # Key (1) + Coincident bases (m-1) + Non-coincident (1)
-    δ = sqrt((2*C_alphbet*log(2) - 2*log(ϵcompPE))/N)
-    @constraint(model, [δ; q[:] - p_sim[:];q_K - pK^2] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q[:]),true))
+    C_alphbet = length(q)+1 # Key (1) + Coincident bases (m-1) + Non-coincident (1)
+    δ = sqrt((2*C_alphbet*log(T(2)) - 2*log(ϵcompPE))/N)
+    @constraint(model, [δ; q - p_sim; q_K - pK^2] in Hypatia.EpiNormInfCone{T,T}(1+1+length(q),true))
 
     # Key map
     Ghat = [I(d^2)]
@@ -195,26 +179,30 @@ function hae_mub_general(
     # Conic program 
     @variable(model, u)
     if fast
-        β = inv(renyiα)
+        @constraint(model, [h_KL; p_ρAB; q] in Hypatia.EpiRelEntropyCone{T}(1+2*length(q),false))
+        β = inv(α)
         sβ = β < 1 ? -1 : 1
         @constraint(
             model,
             [u; ρ_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + vec_dim; blocks)
         )
+        @constraint(model, [h_QKD, q_K, pK^2 * sβ * u] in MOI.ExponentialCone())
+        @objective(model, Min, (α / (α - 1)) * (h_KL - h_QKD) / log(T(2)))
     else
-        β = inv(2 - inv(renyiα))
-        sβ = β < 1 ? -1 : 1
+        @constraint(model, [h_KL; p_ρAB; pK^2; q; q_K] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q),false))
+        γ = inv(2 - inv(α))
+        sγ = γ < 1 ? -1 : 1
         dim_σ = size(Zhat[1],2)
         @variable(model, σ[1:dim_σ, 1:dim_σ], Hermitian)
         @constraint(model, tr(σ) == 1)
         σ_vec = svec(σ)
         @constraint(
             model,
-            [u; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + 2vec_dim; blocks)
+            [u; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat, Zhat, 1 + 2vec_dim; blocks)
         )
+        @constraint(model, [h_QKD, 1, sγ * u] in MOI.ExponentialCone())
+        @objective(model, Min, ((α / (α - 1)) * h_KL + (pK^2-δ)*h_QKD / (γ - 1)) / log(T(2)))
     end
-    @constraint(model, [h_QKD * (β - 1), 1, sβ * u] in MOI.ExponentialCone())
-    @objective(model, Min, renyiα*inv(log(T(2))*(renyiα-T(1)))*h_KL + (pK^2-δ)*inv(log(T(2)))*h_QKD)
 
     # Optimize
     set_optimizer(model, Hypatia.Optimizer{T})
@@ -222,13 +210,13 @@ function hae_mub_general(
     optimize!(model)
 
     # Extract results
-    h_renyi = dual_objective_value(model)
+    h_renyi = objective_value(model)
 
     return h_renyi
 end
 
 # Suggested values for a test
-# d = 5; f = 1.16; N = 1e9; pK = 0.5; v = 0.9; m = d + 1;  analytical_mub = false; fast = true; T = Float64; v = T(0.9);
+# d = 5; f = 1.16; N = 1e9; pK = 0.5; v = 0.9; m = d + 1; fast = true; T = Float64; v = T(0.9);
 function Aux_mub(
     d::Integer, 
     f::Real, 
@@ -236,7 +224,6 @@ function Aux_mub(
     pK::Real,
     v::Real; 
     m::Integer = d + 1,
-    analytical_mub::Bool = false,
     fast::Bool = true,
     T::DataType = Float64)
 
@@ -263,14 +250,14 @@ function Aux_mub(
     b = T(2e-8)
     for i = 1:40
         b += b
-        renyiα = T(1) + b
-        SKR = FiniteSKR(renyiα, Finite_pars(ϵPA, ϵPE, v, d, N, pK, m, ϵcompPE, leak_EC, analytical_mub, fast))
+        α = T(1) + b
+        SKR = FiniteSKR(α, Finite_pars(ϵPA, ϵPE, v, d, N, pK, m, ϵcompPE, leak_EC, fast))
         @printf("α-1 = %.5e, SKR = %.2e \n", b, SKR)
 
 
         # Record outputs
         FILE = open(RATE_MUB,"a")
-        @printf(FILE,"%.2f, %.2f, %.6e, %.6f, %.8e \n", v, pK, renyiα-T(1), leak_EC, SKR)
+        @printf(FILE,"%.2f, %.2f, %.6e, %.6f, %.8e \n", v, pK, α-T(1), leak_EC, SKR)
         close(FILE)
     end
 

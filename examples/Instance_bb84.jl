@@ -151,7 +151,6 @@ function conic_bb84(
 
     # Constraints on exp vals via KL divergence
     p_ρAB = constraint_probabilities_bb84(ρAB, pK)*(1-pK) # PE probabilities
-    @constraint(model, [h_KL; p_ρAB; pK; q; qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q),false))
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
@@ -161,25 +160,26 @@ function conic_bb84(
 
     # Key map
     G_top = gkrausTop(pK)
-    Ghat_top =  sqrt(pK)*[kron(I(2),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)')]
+    Ghat_top =  [sqrt(pK)*kron(I(2),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)')]
     
     vec_dim = Cones.svec_length(Complex, d)
     ρAB_vec = svec(ρAB)
 
     # Conic program
     if fast==true
-        println("Running fast cone... \n")
-        β = inv(α) ; S= I(6)
+        @constraint(model, [h_KL; p_ρAB; q] in Hypatia.EpiRelEntropyCone{T}(1+2*length(q),false))
+        β = inv(α)
+        S = I(6)
         @variable(model, u)
 
-        ZGhat_top = [sqrt(pK)*kron(proj(i),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)') for i=1:2]
+        ZGhat_top = [sqrt(pK)*kron(proj(i,2),ket(1,2)*ket(1,3)'+ ket(2,2)*ket(2,3)') for i=1:2]
         @constraint(model, [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, ZGhat_top, 1 + vec_dim;S))
         sβ = β < 1 ? -1 : 1
-        @constraint(model, [h_QKD * (β - 1), 1, 1 - real(tr(G_top*ρAB*G_top')) + sβ * u] in MOI.ExponentialCone())
-        @objective(model, Min, α*inv(log(T(2))*(α-T(1)))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
+        @constraint(model, [h_QKD, qK, pK * (sβ * u  + 1 - real(tr(Ghat_top[1]*ρAB*Ghat_top[1]')) )] in MOI.ExponentialCone())
+        @objective(model, Min, α*inv(log(T(2))*(α-1)) * (h_KL - h_QKD))
     elseif fast==false
-        println("Running true cone... \n")
-        β = α*inv(2α-1)
+        @constraint(model, [h_KL; p_ρAB; pK; q; qK] in Hypatia.EpiRelEntropyCone{T}(1+2+2*length(q),false))
+        γ = α*inv(2α-1)
         #variables
         @variable(model, uTop); @variable(model, uBot)
         @variable(model, ψAB[1:d*3, 1:d*3], Hermitian) 
@@ -192,17 +192,17 @@ function conic_bb84(
         # cone for click events
         Zhat_top = [kron(ket(r,2)*ket(r,3)', I(6)) for r=1:2]
         STop = kron(sum(kron(ket(i,2),proj(i,2)) for i ∈ 1:2), sum(ket(i,3)*ket(i,2)' for i ∈ 1:2))
-        @constraint(model, [uTop; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, Zhat_top, 1 + length(ρAB_vec)+length(ψ_vec); S=STop))
+        @constraint(model, [uTop; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat_top, Zhat_top, 1 + length(ρAB_vec)+length(ψ_vec); S=STop))
 
         # cone for no-click events
         Ghat_bottom = [kron(I(2), sqrt(1-pK)*(proj(1,3)+proj(2,3))+ proj(3,3))]
         Zhat_bottom = [kron(ket(3,3)',I(6))] 
         SBot = I(6)
-        @constraint(model, [uBot; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(β, Ghat_bottom, Zhat_bottom, 1 + length(ρAB_vec)+length(ψ_vec); S=SBot))
+        @constraint(model, [uBot; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat_bottom, Zhat_bottom, 1 + length(ρAB_vec)+length(ψ_vec); S=SBot))
 
-        sβ = β < 1 ? -1 : 1
-        @constraint(model, [h_QKD * (β - 1), 1, sβ * (uTop + uBot)] in MOI.ExponentialCone())
-        @objective(model, Min, α*inv(log(T(2))*(α-1))*h_KL + (pK-δ)*inv(log(T(2)))*h_QKD)
+        sγ = γ < 1 ? -1 : 1
+        @constraint(model, [h_QKD, 1, sγ * (uTop + uBot)] in MOI.ExponentialCone())
+        @objective(model, Min, ((α / (α - 1)) * h_KL + (pK-δ) * h_QKD / (γ - 1)) / log(T(2)))
     end
 
     # Optimize
@@ -211,7 +211,7 @@ function conic_bb84(
     optimize!(model)
 
     # Extract results
-    h_renyi = dual_objective_value(model)
+    h_renyi = objective_value(model)
 
     return h_renyi 
 end
