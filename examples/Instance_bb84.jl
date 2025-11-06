@@ -21,20 +21,20 @@ end
 "Alice state after depolarization"
 function alice_depol(v, dAL)
     dA = 2
-    ρ1 = kron(proj(1, dA), proj(1, dAL)) + kron(proj(2, dA), proj(2, dAL))
-    ρ2 = kron(proj(1, dA), proj(2, dAL)) + kron(proj(2, dA), proj(1, dAL))
-    ρ01 = kron(ket(1, dA) * ket(2, dA)', ket(1, dAL) * ket(2, dAL)')
-    ρ10 = kron(ket(2, dA) * ket(1, dA)', ket(2, dAL) * ket(1, dAL)')
-    ρ = ((1 + v) / 2 * ρ1 + (1 - v) / 2 * ρ2 + v * (ρ01 + ρ10)) / 2
-    return ρ
+    ω1 = kron(proj(1, dA), proj(1, dAL)) + kron(proj(2, dA), proj(2, dAL))
+    ω2 = kron(proj(1, dA), proj(2, dAL)) + kron(proj(2, dA), proj(1, dAL))
+    ω01 = kron(ket(1, dA) * ket(2, dA)', ket(1, dAL) * ket(2, dAL)')
+    ω10 = kron(ket(2, dA) * ket(1, dA)', ket(2, dAL) * ket(1, dAL)')
+    ω = ((1 + v) / 2 * ω1 + (1 - v) / 2 * ω2 + v * (ω01 + ω10)) / 2
+    return ω
 end
 
 "Alice state after depolarization and losses"
 function alice_depol_loss(v::T, η::T) where {T<:AbstractFloat}
     dA = 2
     dAL = 3
-    ρ = η * alice_depol(v, 3) + (1 - η) * kron(I(dA), proj(3, dAL)) / 2
-    return ρ
+    ω = η * alice_depol(v, 3) + (1 - η) * kron(I(dA), proj(3, dAL)) / 2
+    return ω
 end
 
 "Alice's measurements"
@@ -89,24 +89,24 @@ end
 function qberZ(v::T, η::T, pK::T) where {T<:AbstractFloat}
     A = alice_povm()
     B = bob_povm(pK)
-    ρ = alice_depol_loss(v, η)
-    p_error = sum(real(dot(kron(A[i], B[j]), ρ)) for i ∈ 1:2, j ∈ 1:2 if i != j)
-    p_click = sum(real(dot(kron(A[i], B[j]), ρ)) for i ∈ 1:2, j ∈ 1:2)
+    ω = alice_depol_loss(v, η)
+    p_error = sum(real(dot(kron(A[i], B[j]), ω)) for i ∈ 1:2, j ∈ 1:2 if i != j)
+    p_click = sum(real(dot(kron(A[i], B[j]), ω)) for i ∈ 1:2, j ∈ 1:2)
     return p_error / p_click
 end
 
 "PE correlations with simulated state"
 function PE_probabilities_bb84(v::T, η::T, pK::T) where {T<:AbstractFloat}
-    ρ = alice_depol_loss(v, η)
+    ω = alice_depol_loss(v, η)
     n = size(POVM_AB(pK), 1)
-    expval = [real(dot(ρ, POVM_AB(pK)[i])) for i ∈ (div(n, 2)+1):n]
+    expval = [real(dot(ω, POVM_AB(pK)[i])) for i ∈ (div(n, 2)+1):n]
     return expval
 end
 
 "PE correlations with constraint state"
-function constraint_probabilities_bb84(ρ::AbstractMatrix, pK::T) where {T<:AbstractFloat}
+function constraint_probabilities_bb84(ω::AbstractMatrix, pK::T) where {T<:AbstractFloat}
     n = size(POVM_AB(pK), 1)
-    return real(dot.(Ref(ρ), POVM_AB(pK)[div(n, 2)+1:n]))
+    return real(dot.(Ref(ω), POVM_AB(pK)[div(n, 2)+1:n]))
 end
 
 function conic_bb84(
@@ -126,20 +126,20 @@ function conic_bb84(
     model = GenericModel{T}()
 
     # Variables
-    @variable(model, ρAB[1:d, 1:d], Hermitian)
+    @variable(model, ωAB[1:d, 1:d], Hermitian)
     @variable(model, qK)
     @variable(model, q[1:div(n, 2)])
     @variable(model, h_QKD)
     @variable(model, h_KL)
 
     # Constraints on the state
-    @constraint(model, partial_trace(ρAB, 2, [2, 3]) == Hermitian(I(2) / 2))
+    @constraint(model, partial_trace(ωAB, 2, [2, 3]) == Hermitian(I(2) / 2))
 
     # Constraints on probabilities
     @constraint(model, sum(q) + qK == 1)
 
     # Constraints on exp vals via KL divergence
-    p_ρAB = constraint_probabilities_bb84(ρAB, pK) * (1 - pK) # PE probabilities
+    p_ωAB = constraint_probabilities_bb84(ωAB, pK) * (1 - pK) # PE probabilities
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
@@ -152,25 +152,25 @@ function conic_bb84(
     Ghat_top = [sqrt(pK) * kron(I(2), ket(1, 2) * ket(1, 3)' + ket(2, 2) * ket(2, 3)')]
 
     vec_dim = Cones.svec_length(Complex, d)
-    ρAB_vec = svec(ρAB)
+    ωAB_vec = svec(ωAB)
 
     # Conic program
     if fast == true
-        @constraint(model, [h_KL; p_ρAB; q] in Hypatia.EpiRelEntropyCone{T}(1 + 2 * length(q), false))
+        @constraint(model, [h_KL; p_ωAB; q] in Hypatia.EpiRelEntropyCone{T}(1 + 2 * length(q), false))
         β = inv(α)
         S = I(6)
         @variable(model, u)
 
         ZGhat_top = [sqrt(pK) * kron(proj(i, 2), ket(1, 2) * ket(1, 3)' + ket(2, 2) * ket(2, 3)') for i ∈ 1:2]
-        @constraint(model, [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, ZGhat_top, 1 + vec_dim; S))
+        @constraint(model, [u; ωAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat_top, ZGhat_top, 1 + vec_dim; S))
         sβ = β < 1 ? -1 : 1
         @constraint(
             model,
-            [h_QKD, qK, pK * (sβ * u + 1 - real(tr(Ghat_top[1] * ρAB * Ghat_top[1]')))] in MOI.ExponentialCone()
+            [h_QKD, qK, pK * (sβ * u + 1 - real(tr(Ghat_top[1] * ωAB * Ghat_top[1]')))] in MOI.ExponentialCone()
         )
         @objective(model, Min, α * inv(log(T(2)) * (α - 1)) * (h_KL - h_QKD))
     elseif fast == false
-        @constraint(model, [h_KL; p_ρAB; pK; q; qK] in Hypatia.EpiRelEntropyCone{T}(1 + 2 + 2 * length(q), false))
+        @constraint(model, [h_KL; p_ωAB; pK; q; qK] in Hypatia.EpiRelEntropyCone{T}(1 + 2 + 2 * length(q), false))
         γ = α * inv(2α - 1)
         #variables
         @variable(model, uTop)
@@ -187,8 +187,8 @@ function conic_bb84(
         STop = kron(sum(kron(ket(i, 2), proj(i, 2)) for i ∈ 1:2), sum(ket(i, 3) * ket(i, 2)' for i ∈ 1:2))
         @constraint(
             model,
-            [uTop; ρAB_vec; ψ_vec] in
-            EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat_top, Zhat_top, 1 + length(ρAB_vec) + length(ψ_vec); S = STop)
+            [uTop; ωAB_vec; ψ_vec] in
+            EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat_top, Zhat_top, 1 + length(ωAB_vec) + length(ψ_vec); S = STop)
         )
 
         # cone for no-click events
@@ -197,11 +197,11 @@ function conic_bb84(
         SBot = I(6)
         @constraint(
             model,
-            [uBot; ρAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(
+            [uBot; ωAB_vec; ψ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(
                 γ,
                 Ghat_bottom,
                 Zhat_bottom,
-                1 + length(ρAB_vec) + length(ψ_vec);
+                1 + length(ωAB_vec) + length(ψ_vec);
                 S = SBot
             )
         )

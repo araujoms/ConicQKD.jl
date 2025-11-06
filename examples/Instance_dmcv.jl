@@ -55,14 +55,14 @@ function FiniteSKR(α, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
 end
 
 function alice_part(amplitude::Real)
-    ρ = Hermitian(ones(Complex{typeof(amplitude)}, 4, 4))
-    ρ.data[1, 2] = (exp(-(1 + im) * amplitude^2))
-    ρ.data[1, 3] = (exp(-2 * amplitude^2))
-    ρ.data[1, 4] = (exp(-(1 - im) * amplitude^2))
-    ρ.data[2, 3] = ρ.data[1, 2]
-    ρ.data[2, 4] = ρ.data[1, 3]
-    ρ.data[3, 4] = ρ.data[1, 2]
-    ρ /= 4
+    ω = Hermitian(ones(Complex{typeof(amplitude)}, 4, 4))
+    ω.data[1, 2] = (exp(-(1 + im) * amplitude^2))
+    ω.data[1, 3] = (exp(-2 * amplitude^2))
+    ω.data[1, 4] = (exp(-(1 - im) * amplitude^2))
+    ω.data[2, 3] = ω.data[1, 2]
+    ω.data[2, 4] = ω.data[1, 3]
+    ω.data[3, 4] = ω.data[1, 2]
+    ω /= 4
 end
 
 function integrand(vars, pars)
@@ -101,11 +101,11 @@ function hba_dmcv(L::Integer, ξ::T, amplitude::T) where {T<:AbstractFloat}
 end
 
 function alice_part(α::T) where {T<:Real}
-    ρ = zeros(Complex{T}, 4, 4)
+    ω = zeros(Complex{T}, 4, 4)
     for j ∈ 0:3, i ∈ 0:j
-        ρ[i+1, j+1] = exp(-α^2 * (1 - (1.0 * im)^(i - j))) / 4
+        ω[i+1, j+1] = exp(-α^2 * (1 - (1.0 * im)^(i - j))) / 4
     end
-    return Hermitian(ρ)
+    return Hermitian(ω)
 end
 
 function sinkpi4(::Type{T}, k::Integer) where {T<:Real} #computes sin(k*π/4) with high precision
@@ -208,10 +208,10 @@ function EC_cost_dmcv(L::Integer, f::T, N::T, pK::T, amplitude::T, ϵCR::T) wher
     return leak
 end
 
-function constraint_probabilities_dmcv(ρ::AbstractMatrix, Nc::Integer, Δs::T, Δ::T) where {T<:AbstractFloat}
+function constraint_probabilities_dmcv(ω::AbstractMatrix, Nc::Integer, Δs::T, Δ::T) where {T<:AbstractFloat}
     R_B = test_basis_dmcv(Nc, Δs, Δ)
     bases_AB = [kron(proj(x + 1, 4), R_B[z+1]) for x ∈ 0:3, z ∈ 0:5]
-    return real(dot.(Ref(ρ), bases_AB))
+    return real(dot.(Ref(ω), bases_AB))
 end
 
 function hbe_dmcv_general(
@@ -226,25 +226,25 @@ function hbe_dmcv_general(
     α::T;
     fast::Bool = true
 ) where {T<:AbstractFloat}
-    dim_ρAB = 4 * (Nc + 1)
+    dim_ωAB = 4 * (Nc + 1)
     model = GenericModel{T}()
 
     # Variables
-    @variable(model, ρAB[1:dim_ρAB, 1:dim_ρAB], Hermitian)
+    @variable(model, ωAB[1:dim_ωAB, 1:dim_ωAB], Hermitian)
     @variable(model, q_K)
     @variable(model, q[1:4, 1:6])
     @variable(model, h_QKD)
     @variable(model, h_KL)
 
     # Constraints on the marginal state
-    ρA = partial_trace(ρAB, 2, [4, Nc + 1])
-    @constraint(model, ρA == alice_part(amplitude)) #this already implies tr(τAB) == 1
+    ωA = partial_trace(ωAB, 2, [4, Nc + 1])
+    @constraint(model, ωA == alice_part(amplitude)) #this already implies tr(τAB) == 1
 
     # Constraints on probabilities
     @constraint(model, sum(q) + q_K == 1)
 
     # Constraints on exp vals via KL divergence
-    p_ρAB = (1 - pK) * constraint_probabilities_dmcv(ρAB, Nc, Δs, Δ)
+    p_ωAB = (1 - pK) * constraint_probabilities_dmcv(ωAB, Nc, Δs, Δ)
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator
     δ = sqrt((2 * 25 * log(T(2)) - 2 * log(ϵcompPE)) / N)
@@ -268,16 +268,16 @@ function hbe_dmcv_general(
     block_size = 4 * (Nc + 1)
     blocks = [(i-1)*block_size+1:i*block_size for i ∈ 1:4]
 
-    ρAB_vec = svec(ρAB)
+    ωAB_vec = svec(ωAB)
 
     # Conic program
     @variable(model, u)
     if fast
-        @constraint(model, [h_KL; vec(p_ρAB); vec(q)] in Hypatia.EpiRelEntropyCone{T}(1 + 2 * length(q), false))
+        @constraint(model, [h_KL; vec(p_ωAB); vec(q)] in Hypatia.EpiRelEntropyCone{T}(1 + 2 * length(q), false))
         β = inv(α)
         @constraint(
             model,
-            [u; ρAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, ZGhatperm, 1 + length(ρAB_vec); S, blocks)
+            [u; ωAB_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, ZGhatperm, 1 + length(ωAB_vec); S, blocks)
         )
         sβ = β < 1 ? -1 : 1
         @constraint(model, [h_QKD, q_K, pK * sβ * u] in MOI.ExponentialCone())
@@ -285,7 +285,7 @@ function hbe_dmcv_general(
     else
         @constraint(
             model,
-            [h_KL; vec(p_ρAB); pK; vec(q); q_K] in Hypatia.EpiRelEntropyCone{T}(1 + 2 + 2 * length(q), false)
+            [h_KL; vec(p_ωAB); pK; vec(q); q_K] in Hypatia.EpiRelEntropyCone{T}(1 + 2 + 2 * length(q), false)
         )
         γ = inv(2 - inv(α))
         dim_σSAB = size(Zhat[1], 2)
@@ -294,8 +294,8 @@ function hbe_dmcv_general(
         σSAB_vec = svec(σSAB)
         @constraint(
             model,
-            [u; ρAB_vec; σSAB_vec] in
-            EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat, Zhatperm, 1 + length(ρAB_vec) + length(σSAB_vec); S, blocks)
+            [u; ωAB_vec; σSAB_vec] in
+            EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat, Zhatperm, 1 + length(ωAB_vec) + length(σSAB_vec); S, blocks)
         )
         sγ = γ < 1 ? -1 : 1
         @constraint(model, [h_QKD, 1, sγ * u] in MOI.ExponentialCone())

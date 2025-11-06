@@ -80,7 +80,7 @@ function simulated_probabilities_mub(v::T, d::Integer, pK::T, m::Integer) where 
     return p_sim
 end
 
-function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, m::Integer) where {T<:AbstractFloat}
+function constraint_probabilities_mub(ω::AbstractMatrix, d::Integer, pK::T, m::Integer) where {T<:AbstractFloat}
     mubs = mub(Complex{T}, d) # analytical MUBs from the package Ket
 
     # Vector of probabilities for each basis
@@ -111,7 +111,7 @@ function constraint_probabilities_mub(ρ::AbstractMatrix, d::Integer, pK::T, m::
     cleanup!.(b; tol = sqrt(eps(T)))
     b = Hermitian.(b)
 
-    return real(dot.(Ref(ρ), b))
+    return real(dot.(Ref(ω), b))
 end
 
 function hae_mub_general(
@@ -130,7 +130,7 @@ function hae_mub_general(
     R = is_complex ? Complex{T} : T
 
     # Variables
-    @variable(model, ρ[1:d^2, 1:d^2] ∈ hermitian_space)
+    @variable(model, ω[1:d^2, 1:d^2] ∈ hermitian_space)
     @variable(model, q_K)
     @variable(model, q[1:m])
     @variable(model, h_QKD)
@@ -138,10 +138,10 @@ function hae_mub_general(
 
     # Simulated probabilities
     p_sim = simulated_probabilities_mub(v, d, pK, m)
-    p_ρAB = constraint_probabilities_mub(ρ, d, pK, m)
+    p_ωAB = constraint_probabilities_mub(ω, d, pK, m)
 
     # Constraint on states
-    @constraint(model, tr(ρ) == 1)
+    @constraint(model, tr(ω) == 1)
 
     # Constraints on probabilities
     @constraint(model, sum(q) + q_K == 1)
@@ -159,26 +159,26 @@ function hae_mub_general(
     blocks = [(i-1)*d+1:i*d for i ∈ 1:d]
 
     vec_dim = Cones.svec_length(R, d^2)
-    ρ_vec = svec(ρ)
+    ω_vec = svec(ω)
 
     # Conic program 
     @variable(model, u)
     if fast
-        @constraint(model, [h_KL; p_ρAB; q] in Hypatia.EpiRelEntropyCone{T}(1 + 2 * length(q), false))
+        @constraint(model, [h_KL; p_ωAB; q] in Hypatia.EpiRelEntropyCone{T}(1 + 2 * length(q), false))
         β = inv(α)
         sβ = β < 1 ? -1 : 1
-        @constraint(model, [u; ρ_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+        @constraint(model, [u; ω_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + vec_dim; blocks))
         @constraint(model, [h_QKD, q_K, pK^2 * sβ * u] in MOI.ExponentialCone())
         @objective(model, Min, (α / (α - 1)) * (h_KL - h_QKD) / log(T(2)))
     else
-        @constraint(model, [h_KL; p_ρAB; pK^2; q; q_K] in Hypatia.EpiRelEntropyCone{T}(1 + 2 + 2 * length(q), false))
+        @constraint(model, [h_KL; p_ωAB; pK^2; q; q_K] in Hypatia.EpiRelEntropyCone{T}(1 + 2 + 2 * length(q), false))
         γ = inv(2 - inv(α))
         sγ = γ < 1 ? -1 : 1
         dim_σ = size(Zhat[1], 2)
         @variable(model, σ[1:dim_σ, 1:dim_σ], Hermitian)
         @constraint(model, tr(σ) == 1)
         σ_vec = svec(σ)
-        @constraint(model, [u; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat, Zhat, 1 + 2vec_dim; blocks))
+        @constraint(model, [u; ω_vec; σ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat, Zhat, 1 + 2vec_dim; blocks))
         @constraint(model, [h_QKD, 1, sγ * u] in MOI.ExponentialCone())
         @objective(model, Min, ((α / (α - 1)) * h_KL + (pK^2 - δ) * h_QKD / (γ - 1)) / log(T(2)))
     end
