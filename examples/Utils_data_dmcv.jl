@@ -107,6 +107,6 @@ function optimal_renyi(f::Real,N::Real,L::Integer)
                             9.97, 11.9, 13.1, 14.8, 15.0]*1e-4
             return L < length(optimal_renyi) ? optimal_renyi[L+1] : optimal_renyi[end]
     else # If there's no data, return 0 (i.e. perform the optimization via Optim)
-        return 0
+        return 0.0
     end
 end
