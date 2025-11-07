@@ -16,13 +16,11 @@ include("Utils_data_dmcv.jl")
 @with_kw struct epsilon_coeffs{T<:AbstractFloat}
     ϵCR::T = inv(T(10^11))
     ϵPA::T = 9inv(T(10^11))
-    ϵPE::T = 9inv(T(10^11))
     ϵcompPE::T = 9inv(T(10^11))
 end
 
 @with_kw struct Finite_pars{T<:AbstractFloat}
     ϵPA::T
-    ϵPE::T
     L::Integer
     N::T
     Nc::Integer
@@ -38,10 +36,10 @@ end
 function FiniteSKR(α, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
 
     # unpack pars
-    @unpack ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, amplitude, leak_EC, fast = finiteSKR_pars
+    @unpack ϵPA, L, N, Nc, pK, Δs, Δ, ϵcompPE, amplitude, leak_EC, fast = finiteSKR_pars
 
     # Total correction
-    correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA) / N
+    correction = leak_EC + Finite_corrections(α, ϵPA) / N
 
     # Conic program
     h_renyi = hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, amplitude, α; fast)
@@ -196,8 +194,8 @@ function simulated_probabilities_dmcv(Δs::T, Δ::T, amplitude::T, L::Integer) w
     return p_sim
 end
 
-Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} =
-    (log(1 / ϵPE) + log(1 / ϵPA)) * α * inv(α - 1) - 2
+Finite_corrections(α::T, ϵPA::T) where {T<:AbstractFloat} =
+    log(1 / ϵPA) * α * inv(α - 1) - 2
 
 function EC_cost_dmcv(L::Integer, f::T, N::T, pK::T, amplitude::T, ϵCR::T) where {T<:AbstractFloat}
     ξ = T(1) / 100
@@ -325,7 +323,7 @@ function Finite_dmcv(
 ) where {T<:AbstractFloat}
 
     # Load the epsilons
-    @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
+    @unpack ϵCR, ϵPA, ϵcompPE = epsilon_coeffs{T}()
 
     # Pick the amplitude for the coherent states
     amplitude = optimal_amp(f, L)
@@ -338,7 +336,7 @@ function Finite_dmcv(
 
     # If the optimal value for α is known, calculate the SKR
     if opt_renyi != 1
-        correction = leak_EC + Finite_corrections(opt_renyi, ϵPE, ϵPA) / N
+        correction = leak_EC + Finite_corrections(opt_renyi, ϵPA) / N
 
         # Conic program
         h_renyi = hbe_dmcv_general(L, N, Nc, pK, Δs, Δ, ϵcompPE, amplitude, opt_renyi; fast)
@@ -349,7 +347,7 @@ function Finite_dmcv(
 
         # Otherwise, optimize with respect to α
     else
-        finiteSKR_pars = Finite_pars(ϵPA, ϵPE, L, N, Nc, pK, Δs, Δ, ϵcompPE, amplitude, leak_EC, fast)
+        finiteSKR_pars = Finite_pars(ϵPA, L, N, Nc, pK, Δs, Δ, ϵcompPE, amplitude, leak_EC, fast)
         optimize_renyi(α) = -FiniteSKR(α[1], finiteSKR_pars)
 
         # Initial guess

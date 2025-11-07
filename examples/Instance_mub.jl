@@ -13,13 +13,11 @@ import Optim
 @with_kw struct epsilon_coeffs{T<:AbstractFloat}
     ϵCR::T = inv(T(10^11))
     ϵPA::T = 9inv(T(10^11))
-    ϵPE::T = 9inv(T(10^11))
     ϵcompPE::T = 9inv(T(10^11))
 end
 
 @with_kw struct Finite_pars{T<:AbstractFloat}
     ϵPA::T
-    ϵPE::T
     v::T
     d::Integer
     N::T
@@ -33,10 +31,10 @@ end
 function FiniteSKR(α, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
 
     # unpack pars
-    @unpack ϵPA, ϵPE, v, d, N, pK, m, ϵcompPE, leak_EC, fast = finiteSKR_pars
+    @unpack ϵPA, v, d, N, pK, m, ϵcompPE, leak_EC, fast = finiteSKR_pars
 
     # Total correction
-    correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA) / N
+    correction = leak_EC + Finite_corrections(α, ϵPA) / N
 
     # Conic program
     h_renyi = hae_mub_general(v, d, N, pK, m, ϵcompPE, α; fast)
@@ -54,7 +52,7 @@ function zgkraus(d::Integer)
     return K
 end
 
-Finite_corrections(α::T, ϵPE::T, ϵPA::T) where {T<:AbstractFloat} = (log(1 / ϵPE) + log(1 / ϵPA)) * α / (α - 1) - 2
+Finite_corrections(α::T, ϵPA::T) where {T<:AbstractFloat} = log(1 / ϵPA) * α / (α - 1) - 2
 
 function EC_cost_mub(v::T, d::Integer, f::T, N::T, pK::T, ϵCR::T) where {T<:AbstractFloat}
 
@@ -222,7 +220,7 @@ function Aux_mub(
     close(FILE)
 
     # Load the epsilons
-    @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
+    @unpack ϵCR, ϵPA, ϵcompPE = epsilon_coeffs{T}()
 
     # Calculate EC cost per symbol
     leak_EC = EC_cost_mub(v, d, f, N, pK, ϵCR)
@@ -231,7 +229,7 @@ function Aux_mub(
     for i ∈ 1:40
         b += b
         α = T(1) + b
-        SKR = FiniteSKR(α, Finite_pars(ϵPA, ϵPE, v, d, N, pK, m, ϵcompPE, leak_EC, fast))
+        SKR = FiniteSKR(α, Finite_pars(ϵPA, v, d, N, pK, m, ϵcompPE, leak_EC, fast))
         @printf("α-1 = %.5e, SKR = %.2e \n", b, SKR)
 
         # Record outputs
