@@ -223,12 +223,12 @@ function Finite_bb84(
     qZ = qberZ(v, η, pK)
     leak_EC = EC_cost_bb84(qZ, η, f, pK,ϵCR,N)
 
-    # #---------------- Optimization of α paramter ---------------------------
-    obj(αrenyi) = -conic_bb84(αrenyi, v, η, N, pK, ϵcompPE; fast)
+    #  Optimization of α parameter 
+   obj(αrenyi) = -(conic_bb84(αrenyi, v, η, N, pK, ϵcompPE; fast) - Finite_corrections(αrenyi, ϵPA, ϵCR) / N)
 
     #ranges
-    α_low = T(1 + 1e-8)
-    α_high = T(1.01)
+    α_low = T(1 + 1e-6)
+    α_high = T(1 + 1e-1)
 
     println("Starting optimization on α")
     sol = Optim.optimize(obj, α_low, α_high, Brent())
@@ -236,31 +236,14 @@ function Finite_bb84(
     optimal_renyi = sol.minimizer[1]
     h_renyi = -sol.minimum
 
-    # ------------------------------------------
-    # # FINE SEARCH
-    # α_min,α_max  = 1e-7, 0.01
-    # n = 300 
-    # α_grid =1 .+ α_min .* ((α_max/α_min) .^ (range(0, 1; length=n)))
-
-    # println("Starting loop on α")
-
-    # SKR_vals = [conic_bb84(α,v,η,N, pK, ϵcompPE;renyi, fast) for α in α_grid]
-    # SKR_vals = filter(!isnan, SKR_vals)
-
-    # h_renyi, idx = findmax(SKR_vals)
-    # optimal_renyi = α_grid[idx]
-
-    #------------------------------------------
-
-    correction = leak_EC + Finite_corrections(optimal_renyi, ϵPA, ϵCR) / N
-    SKR_Max = h_renyi - correction
+    SKR_Max = h_renyi - leak_EC
     @printf("Optimum found for α-1 = %.5e giving a key rate of SKR = %.2e \n", optimal_renyi - 1, SKR_Max)
 
     return SKR_Max, optimal_renyi, leak_EC, h_renyi
 end
 
 "Function to obtain and save the key rates"
-function Instance_bb84(f::Real, N::Real, v::Real, ::Type{T}) where {T}
+function Instance_bb84(f::Real, N::Real, v::Real, ::Type{T}; fast::Bool = true) where {T}
 
     # Enforce desired precision
     f = T(f)
@@ -271,18 +254,18 @@ function Instance_bb84(f::Real, N::Real, v::Real, ::Type{T}) where {T}
     file = open(RATE_BB84, "a")
     @printf(file, "f, N, nu \n")
     @printf(file, "%.2f, %.2f, %.2f \n", f, log10(N), v)
-    @printf(file, "D, pK, a-1, leakEC, SKR, dual \n")
+    @printf(file, "dB, pK, a-1, leakEC, SKR, dual \n")
     close(file)
 
-    # Start loop for various values of the distance
-    for L ∈ 0:2:48
+    # Start main loop
+    for dB ∈ 0:2:48 # Change accordingly
         @printf("Distance: %d ---------\n", L)
         pK = optimal_pK(f,N,L)
-        Finite_SKR, optimal_α, leak_EC, dual = Finite_bb84(L, N, v, pK, f; renyi = true, fast = true)
+        Finite_SKR, optimal_α, leak_EC, dual = Finite_bb84(dB, N, v, pK, f; fast)
 
         # Record outputs
         file = open(RATE_BB84, "a")
-        @printf(file, "%d, %.2f, %.8e, %.12f, %.8e, %.8e \n", L, pK, optimal_α - T(1), leak_EC, Finite_SKR, dual)
+        @printf(file, "%d, %.2f, %.8e, %.12f, %.8e, %.8e \n", dB, pK, optimal_α - T(1), leak_EC, Finite_SKR, dual)
         close(file)
     end
 end
