@@ -57,10 +57,14 @@ function optimal_pK(f::Real,N::Real,L::Integer)
                             0.60, 0.60, 0.55, 0.55, 0.55,
                             0.50, 0.50, 0.45, 0.45, 0.45,
                             0.45, 0.45, 0.45, 0.45]
-    else # Default to N = 1e7
+    elseif N == 1e7
         optimal_pK = [0.50, 0.50, 0.50, 0.50, 0.50, 0.50,
                             0.50, 0.50, 0.45, 0.45, 0.45,
                             0.40, 0.40, 0.35, 0.33, 0.30]
+    else # Default to N = 5e6
+        optimal_pK = [0.42, 0.42, 0.42, 0.42, 0.42, 0.42,
+                            0.40, 0.40, 0.38, 0.38, 0.36,
+                            0.32, 0.30, 0.28, 0.26, 0.24]
     end
 
     return L < length(optimal_pK) ? optimal_pK[L+1] : optimal_pK[end]
@@ -104,8 +108,15 @@ function optimal_renyi(f::Real,N::Real,L::Integer)
     elseif N == 1e7
         optimal_renyi = [3.96, 3.96, 4.53, 4.79, 5.21, 5.29,
                             5.77, 6.13, 7.33, 8.05, 8.10,
-                            9.97, 11.9, 13.1, 14.8, 15.0]*1e-4
+                            9.97, 11.9, 13.1, 14.8, 15.0,
+                            15.0, 15.0, 13.4, 13.4]*1e-4
             return L < length(optimal_renyi) ? optimal_renyi[L+1] : optimal_renyi[end]
+    elseif N == 5e6
+        optimal_renyi = [5.40, 5.40, 5.40, 6.36, 6.36, 6.98,
+                            6.98, 8.11, 8.11, 10.1, 10.1, 
+                            13.3, 13.3, 16.7, 16.7, 19.8]*1e-4
+            return L < length(optimal_renyi) ? optimal_renyi[L+1] : optimal_renyi[end]
+
     else # If there's no data, return 0 (i.e. perform the optimization via Optim)
         return 0.0
     end
