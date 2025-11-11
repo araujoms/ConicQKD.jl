@@ -14,26 +14,24 @@ include("Utils_data_bb84.jl")
 @with_kw struct epsilon_coeffs{T<:AbstractFloat}
     ϵCR::T = inv(T(10^11))
     ϵPA::T = 9inv(T(10^11))
-    ϵPE::T = 9inv(T(10^11))
     ϵcompPE::T = 9inv(T(10^11))
 end
 
 "Alice state after depolarization"
-function alice_depol(v, dAL)
-    dA = 2
+function alice_depol(v::T) where {T<:AbstractFloat}
+    dA = 2; dAL = 3
     ω1 = kron(proj(1, dA), proj(1, dAL)) + kron(proj(2, dA), proj(2, dAL))
     ω2 = kron(proj(1, dA), proj(2, dAL)) + kron(proj(2, dA), proj(1, dAL))
     ω01 = kron(ket(1, dA) * ket(2, dA)', ket(1, dAL) * ket(2, dAL)')
     ω10 = kron(ket(2, dA) * ket(1, dA)', ket(2, dAL) * ket(1, dAL)')
-    ω = ((1 + v) / 2 * ω1 + (1 - v) / 2 * ω2 + v * (ω01 + ω10)) / 2
+    ω = ((1-v/2)*ω1 + v/2*ω2  + (1-v)*(ω01 + ω10))/2
     return ω
 end
 
 "Alice state after depolarization and losses"
 function alice_depol_loss(v::T, η::T) where {T<:AbstractFloat}
-    dA = 2
-    dAL = 3
-    ω = η * alice_depol(v, 3) + (1 - η) * kron(I(dA), proj(3, dAL)) / 2
+    dA = 2; dAL = 3
+    ω = η * alice_depol(v) + (1 - η) * kron(I(dA), proj(3, dAL)) / 2
     return ω
 end
 
@@ -60,28 +58,13 @@ function POVM_AB(pK::T) where {T<:AbstractFloat}
     return povm
 end
 
-"Kraus operator for the pinching map after facial reduction"
-function zkraus()
-    QB_Z = (proj(1, 3) + proj(2, 3))
-    QB_perp = proj(3, 3)
-    Z = [kron(proj(1, 2), QB_Z) + kron(I(2), QB_perp), kron(proj(2, 2), QB_Z)]
-    return Z
-end
-
-"Kraus operator for the key map"
-function gkrausTop(pK::T) where {T<:AbstractFloat}
-    QB_Z = proj(1, 3) + proj(2, 3)
-    G = sqrt(pK) * sum(kron(ket(i, 3), kron(proj(i, 2), QB_Z)) for i ∈ 1:2)
-    return G
-end
-
 "Leakage"
-function EC_cost_bb84(qber::T, η::T, f::T, pK::T) where {T<:AbstractFloat}
+function EC_cost_bb84(qber::T, η::T, f::T, pK::T,ϵCR::T,N::T) where {T<:AbstractFloat}
     # H(A|B) 
     leak_EC = binary_entropy(qber)
 
     leak_EC *= f * η * pK^2                 # EC efficiency and pK
-    # leak_EC += ceil(log2(inv(ϵCR)))/N   # Correctness cost added in finite corrections
+    leak_EC += ceil(log2(inv(ϵCR)))/N   # Correctness cost added in finite corrections
     return leak_EC
 end
 
@@ -143,12 +126,11 @@ function conic_bb84(
 
     # Finite bounds via a Bretagnolle-Huber-Carol estimator 
     C_alphbet = 13 # {perp} U {(0,1) x ((X,Z) x (0,1,perp))}
-    δ = sqrt((2 * C_alphbet * log(T(2)) - 2 * log(ϵcompPE)) / N)
+    δ = sqrt((2 * C_alphbet * log(T(2)) - 2 * log(ϵcompPE)) / N)/1e7
     p_sim = PE_probabilities_bb84(v, η, pK) * (1 - pK)
     @constraint(model, [δ; q - p_sim; qK - pK] in Hypatia.EpiNormInfCone{T,T}(1 + 1 + length(q), true))
 
-    # Key map
-    G_top = gkrausTop(pK)
+    # Key map used by both cones
     Ghat_top = [sqrt(pK) * kron(I(2), ket(1, 2) * ket(1, 3)' + ket(2, 2) * ket(2, 3)')]
 
     vec_dim = Cones.svec_length(Complex, d)
@@ -156,7 +138,6 @@ function conic_bb84(
 
     # Conic program
     if fast == true
-        @constraint(model, [h_KL; p_ωAB; q] in Hypatia.EpiRelEntropyCone{T}(1 + 2 * length(q), false))
         β = inv(α)
         S = I(6)
         @variable(model, u)
@@ -168,18 +149,15 @@ function conic_bb84(
             model,
             [h_QKD, qK, pK * (sβ * u + 1 - real(tr(Ghat_top[1] * ωAB * Ghat_top[1]')))] in MOI.ExponentialCone()
         )
+        @constraint(model, [h_KL; p_ωAB; q] in Hypatia.EpiRelEntropyCone{T}(1 + 2 * length(q), false))
         @objective(model, Min, α * inv(log(T(2)) * (α - 1)) * (h_KL - h_QKD))
     elseif fast == false
-        @constraint(model, [h_KL; p_ωAB; pK; q; qK] in Hypatia.EpiRelEntropyCone{T}(1 + 2 + 2 * length(q), false))
         γ = α * inv(2α - 1)
-        #variables
         @variable(model, uTop)
         @variable(model, uBot)
         @variable(model, ψAB[1:d*3, 1:d*3], Hermitian)
 
-        #constraint
         @constraint(model, tr(ψAB) == 1)
-
         ψ_vec = svec(ψAB)
 
         # cone for click events
@@ -208,6 +186,7 @@ function conic_bb84(
 
         sγ = γ < 1 ? -1 : 1
         @constraint(model, [h_QKD, 1, sγ * (uTop + uBot)] in MOI.ExponentialCone())
+        @constraint(model, [h_KL; p_ωAB; pK; q; qK] in Hypatia.EpiRelEntropyCone{T}(1 + 2 + 2 * length(q), false))
         @objective(model, Min, ((α / (α - 1)) * h_KL + (pK - δ) * h_QKD / (γ - 1)) / log(T(2)))
     end
 
@@ -223,10 +202,8 @@ function conic_bb84(
 end
 
 "Finite corrections for the final key rate"
-Finite_corrections(α::T, ϵPE::T, ϵPA::T, ϵCR::T) where {T<:AbstractFloat} =
-    (log2(inv(ϵPA))) * α / (α - 1) - 2 + ceil(log2(inv(ϵCR)))
-
-# (log2(inv(1e-80/2)) )* α/(α-T(1)) - 2 + ceil( log2(inv(1e-80/2)) )
+Finite_corrections(α::T, ϵPA::T) where {T<:AbstractFloat} =
+    (log2(inv(ϵPA))) * α / (α - 1) - 2 
 
 function Finite_bb84(
     dB::Integer,
@@ -238,21 +215,20 @@ function Finite_bb84(
 ) where {T<:AbstractFloat}
 
     # Load the epsilons
-    @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
+    @unpack ϵCR, ϵPA, ϵcompPE = epsilon_coeffs{T}()
 
     η = 10^(-T(dB) / 10)
 
     # Calculate EC cost per symbol
     qZ = qberZ(v, η, pK)
-    leak_EC = EC_cost_bb84(qZ, η, f, pK)
+    leak_EC = EC_cost_bb84(qZ, η, f, pK,ϵCR,N)
 
-    # #---------------- Optimization of α paramter ---------------------------
-    obj(αrenyi) = -conic_bb84(αrenyi, v, η, N, pK, ϵcompPE; fast)
+    #  Optimization of α parameter 
+   obj(αrenyi) = -(conic_bb84(αrenyi, v, η, N, pK, ϵcompPE; fast) - Finite_corrections(αrenyi, ϵPA, ϵCR) / N)
 
     #ranges
-    α_low = T(1 + 1e-8)
-    α_high = T(1.01)
-    α0 = T(1 + 2e-5)
+    α_low = T(1 + 1e-6)
+    α_high = T(1 + 1e-1)
 
     println("Starting optimization on α")
     sol = Optim.optimize(obj, α_low, α_high, Brent())
@@ -260,31 +236,14 @@ function Finite_bb84(
     optimal_renyi = sol.minimizer[1]
     h_renyi = -sol.minimum
 
-    # ------------------------------------------
-    # # FINE SEARCH
-    # α_min,α_max  = 1e-7, 0.01
-    # n = 300 
-    # α_grid =1 .+ α_min .* ((α_max/α_min) .^ (range(0, 1; length=n)))
-
-    # println("Starting loop on α")
-
-    # SKR_vals = [conic_bb84(α,v,η,N, pK, ϵcompPE;renyi, fast) for α in α_grid]
-    # SKR_vals = filter(!isnan, SKR_vals)
-
-    # h_renyi, idx = findmax(SKR_vals)
-    # optimal_renyi = α_grid[idx]
-
-    #------------------------------------------
-
-    correction = leak_EC + Finite_corrections(optimal_renyi, ϵPE, ϵPA, ϵCR) / N
-    SKR_Max = h_renyi - correction
+    SKR_Max = h_renyi - leak_EC
     @printf("Optimum found for α-1 = %.5e giving a key rate of SKR = %.2e \n", optimal_renyi - 1, SKR_Max)
 
     return SKR_Max, optimal_renyi, leak_EC, h_renyi
 end
 
 "Function to obtain and save the key rates"
-function Instance_bb84(f::Real, N::Real, v::Real, ::Type{T}) where {T}
+function Instance_bb84(f::Real, N::Real, v::Real, ::Type{T}; fast::Bool = true) where {T}
 
     # Enforce desired precision
     f = T(f)
@@ -295,65 +254,14 @@ function Instance_bb84(f::Real, N::Real, v::Real, ::Type{T}) where {T}
     file = open(RATE_BB84, "a")
     @printf(file, "f, N, nu \n")
     @printf(file, "%.2f, %.2f, %.2f \n", f, log10(N), v)
-    @printf(file, "D, pK, a-1, leakEC, SKR, dual \n")
+    @printf(file, "dB, pK, a-1, leakEC, SKR, dual \n")
     close(file)
 
-    # Start loop for various values of the distance
-    for L ∈ 0:2:36 # ∈ vcat(1,10:10:40)
+    # Start main loop
+    for dB ∈ 0:2:48 # Change accordingly
         @printf("Distance: %d ---------\n", L)
-        pK = 0.9 #optimal_pK(f,N,L)
-        Finite_SKR, optimal_α, leak_EC, dual = Finite_bb84(L, N, v, pK, f; renyi = true, fast = true)
-
-        # Record outputs
-        file = open(RATE_BB84, "a")
-        @printf(file, "%d, %.2f, %.8e, %.12f, %.8e, %.8e \n", L, pK, optimal_α - T(1), leak_EC, Finite_SKR, dual)
-        close(file)
-    end
-end
-
-############### REMOVE FUNCTIONS BELOW ################################
-"Auxiliary function to optimize on pK (to be remove)"
-function Instance_bb84_pK(dB::Real, f::Real, N::Real, v::Real, ::Type{T}; fast::Bool = true) where {T}
-
-    # Enforce desired precision
-    f = T(f)
-    N = T(N)
-
-    # Create output file
-    if fast == true
-        RATE_BB84 =
-            "examples/data_bb84/varying_pK/delta0_f" *
-            string(f) *
-            "_Optim_bb84_N1e" *
-            string(count(==('0'), string(Int(N)))) *
-            "_dB" *
-            string(dB) *
-            ".csv"
-    else
-        RATE_BB84 =
-            "examples/data_bb84/true_cone/f" *
-            string(f) *
-            "_Optim_bb84_N1e" *
-            string(count(==('0'), string(Int(N)))) *
-            "_dB" *
-            string(dB) *
-            ".csv"
-    end
-    file = open(RATE_BB84, "a")
-    @printf(file, "f, N, nu \n")
-    @printf(file, "%.2f, %.2f, %.2f \n", f, log10(N), v)
-    @printf(file, "D, pK, a-1, leakEC, SKR, dual \n")
-    close(file)
-
-    if dB < 10
-        range = 0.85:0.01:0.98
-    else
-        range = 0.06:0.01:0.8
-    end
-    # Start loop for various values of the distance
-    for pK ∈ 0.6:0.01:0.98# ∈ vcat(1,10:10:40)
-        @printf("Values of pK: %d ---------\n", dB)
-        Finite_SKR, optimal_α, leak_EC, dual = Finite_bb84(dB, N, v, pK, f; renyi = true, fast)
+        pK = optimal_pK(f,N,L)
+        Finite_SKR, optimal_α, leak_EC, dual = Finite_bb84(dB, N, v, pK, f; fast)
 
         # Record outputs
         file = open(RATE_BB84, "a")
@@ -361,92 +269,3 @@ function Instance_bb84_pK(dB::Real, f::Real, N::Real, v::Real, ::Type{T}; fast::
         close(file)
     end
 end
-
-function Finite_bb84_alpha(
-    α::T,
-    dB::Integer,
-    N::T,
-    v::T,
-    pK::T,
-    f::T;
-    fast::Bool = false
-) where {T<:AbstractFloat}
-
-    # Load the epsilons
-    @unpack ϵCR, ϵPA, ϵPE, ϵcompPE = epsilon_coeffs{T}()
-
-    η = 10^(-T(dB) / 10)
-
-    # Calculate EC cost per symbol
-    qZ = qberZ(v, η, pK)
-    leak_EC = EC_cost_bb84(qZ, η, f, pK)
-    h_renyi = conic_bb84(α, v, η, N, pK, ϵcompPE; fast)
-    correction = leak_EC + Finite_corrections(α, ϵPE, ϵPA, ϵCR) / N
-    SKR_Max = h_renyi - correction
-    @printf("Optimum found for α-1 = %.5e giving a key rate of SKR = %.2e \n", α - 1, SKR_Max)
-
-    return SKR_Max, leak_EC, h_renyi
-end
-
-"Auxiliary function to optimize on α (to be remove)"
-function Instance_bb84_alpha(dB::Real, f::Real, N::Real, v::Real, ::Type{T}; fast::Bool = true) where {T}
-
-    # Enforce desired precision
-    f = T(f)
-    N = T(N)
-    pK = 0.9
-
-    # Create output file
-    if fast == true
-        RATE_BB84 =
-            "examples/data_bb84/varying_alpha/f" *
-            string(f) *
-            "_Optim_bb84_N1e" *
-            string(count(==('0'), string(Int(N)))) *
-            "_dB" *
-            string(dB) *
-            ".csv"
-    else
-        RATE_BB84 =
-            "examples/data_bb84/varying_alpha/Renyi_f" *
-            string(f) *
-            "_Optim_bb84_N1e" *
-            string(count(==('0'), string(Int(N)))) *
-            "_dB" *
-            string(dB) *
-            ".csv"
-    end
-    file = open(RATE_BB84, "a")
-    @printf(file, "f, N, nu \n")
-    @printf(file, "%.2f, %.2f, %.2f \n", f, log10(N), v)
-    @printf(file, "D, pK, a-1, leakEC, SKR, dual \n")
-    close(file)
-
-    # Start loop for various values of the distance
-
-    b = 2inv(T(10^8))
-    for i ∈ 1:40
-        b += b
-        α = 1 + b
-        @printf("Values of α: %.8e ---------\n", α)
-        Finite_SKR, leak_EC, dual = Finite_bb84_alpha(α, dB, N, v, pK, f; fast)
-
-        # Record outputs
-        file = open(RATE_BB84, "a")
-        @printf(file, "%d, %.2f, %.8e, %.12f, %.8e, %.8e \n", dB, pK, α - 1, leak_EC, Finite_SKR, dual)
-        close(file)
-    end
-end
-
-#f=1.16; N = 1e9;  T = Float64;# pK=0.90;# pK = 0.95;#L= 20;
-#v=0.97;
-
-# Instance_bb84(f,N,v;T)
-
-# Instance_bb84_alpha(0,f,N,v;T, fast=false)
-
-#for dB=[0,8,16] #
-#    Instance_bb84_pK(dB,f,N,v;T, fast=false)
-#end
-
-# L= 0; pK=0.91; η=1.;  α=1.00004000 5.84726152e-05+1
