@@ -1,0 +1,320 @@
+using LinearAlgebra
+using JuMP
+using ConicQKD
+using Ket
+import Hypatia
+import Hypatia.Cones
+
+using Printf
+using Parameters
+import Optim
+
+@with_kw struct epsilon_coeffs{T<:AbstractFloat}
+    ϵCR::T = inv(T(10^11))
+    ϵPA::T = 9inv(T(10^11))
+    ϵcompPE::T = 9inv(T(10^11))
+end
+
+@with_kw struct Finite_pars{T<:AbstractFloat}
+    ϵPA::T
+    v::T
+    d::Integer
+    N::Integer
+    pK::T
+    m::Integer
+    ϵcompPE::T
+    leak_EC::T
+    fast::Bool
+end
+
+function FiniteSKR(α, finiteSKR_pars::Finite_pars{T}) where {T<:AbstractFloat}
+
+    # unpack pars
+    @unpack ϵPA, v, d, N, pK, m, ϵcompPE, leak_EC, fast = finiteSKR_pars
+
+    # Total correction
+    correction = leak_EC + Finite_corrections(α, ϵPA) / N
+
+    # Conic program
+    h_renyi = hae_mub_general(v, d, N, pK, m, ϵcompPE, α; fast)
+
+    FiniteSecretKey = h_renyi - correction
+
+    return FiniteSecretKey
+end
+
+function zgkraus(d::Integer)
+    K = [kron(proj(i, d), I(d)) for i ∈ 1:d]
+    return K
+end
+
+Finite_corrections(α::T, ϵPA::T) where {T<:AbstractFloat} = log(1 / ϵPA) * α / (α - 1) - 2
+
+function EC_cost_mub(v::T, d::Integer, f::T, N::Integer, pK::T, ϵCR::T) where {T<:AbstractFloat}
+
+    # H(A|B)
+    leak_EC = binary_entropy(v + (1 - v) / d) + (1 - v - (1 - v) / d) * log2(T(d) - 1)
+
+    leak_EC *= f * pK^2                 # EC efficiency and pK
+    leak_EC += ceil(log2(inv(ϵCR))) / N # Correctness cost
+
+    return leak_EC
+end
+
+function simulated_probabilities_mub(v::T, d::Integer, pK::T, m::Integer) where {T<:AbstractFloat}
+    p2 = ((1 - pK) * inv(m - 1))^2
+    W = v + (1 - v) / d
+
+    # Basis coincidence
+    p_sim = p2 * W * ones(m - 1)
+
+    # Anything else
+    push!(p_sim, 1 - pK^2 - (m - 1) * p2 * W)
+
+    return p_sim
+end
+
+function constraint_probabilities_mub(ω::AbstractMatrix, d::Integer, pK::T, m::Integer) where {T<:AbstractFloat}
+    mubs = mub(Complex{T}, d) # analytical MUBs from the package Ket
+
+    # Vector of probabilities for each basis
+    p = [pK]
+    pPE = [(1 - pK) * inv(m - 1) for i ∈ 1:m-1]
+    append!(p, pPE)
+
+    # Probability of basis coincidence
+    p2 = ((1 - pK) * inv(m - 1))^2
+    b = [zeros(Complex{T}, d^2, d^2) for i ∈ 1:m]
+    for i ∈ 1:m-1, j ∈ 1:d
+        temp = ketbra(mubs[i+1][:, j]) # Note that we skip the first MUB
+        b[i] += p2 * kron(temp, transpose(temp))
+    end
+
+    # Then they sum all other cases
+    for i ∈ 1:m, j ∈ 1:m, k ∈ 1:d, l ∈ 1:d
+        if i == 1 && j == 1
+            continue
+        elseif i == j && k == l # This also skips i == 0 (key)
+            continue
+        end
+        tempA = ketbra(mubs[i][:, k])
+        tempB = ketbra(mubs[j][:, l])
+        b[m] += p[i] * p[j] * kron(tempA, transpose(tempB))
+    end
+
+    cleanup!.(b; tol = sqrt(eps(T)))
+    b = Hermitian.(b)
+
+    return real(dot.(Ref(ω), b))
+end
+
+function hae_mub_general(
+    v::T,
+    d::Integer,
+    N::Integer,
+    pK::T,
+    m::Integer,
+    ϵcompPE::T,
+    α::T;
+    fast::Bool = true
+) where {T<:AbstractFloat}
+    if fast
+        return _hae_mub_general_fast(v, d, N, pK, m, ϵcompPE, α)
+    else
+        return _hae_mub_general_true(v, d, N, pK, m, ϵcompPE, α)
+    end
+end
+
+function _hae_mub_general_fast(
+    v::T,
+    d::Integer,
+    N::Integer,
+    pK::T,
+    m::Integer,
+    ϵcompPE::T,
+    α::T
+) where {T<:AbstractFloat}
+    is_complex = true
+    model = GenericModel{T}()
+    hermitian_space = Ket._sdp_parameters(is_complex)[3]
+    R = is_complex ? Complex{T} : T
+
+    # Variables
+    @variable(model, ω[1:d^2, 1:d^2] ∈ hermitian_space)
+    @variable(model, qK)
+    @variable(model, q[1:m])
+    @variable(model, h_QKD)
+    @variable(model, h_KL)
+
+    # Simulated probabilities
+    p_sim = simulated_probabilities_mub(v, d, pK, m)
+    p_ωAB = constraint_probabilities_mub(ω, d, pK, m)
+
+    # Constraint on states
+    @constraint(model, tr(ω) == 1)
+
+    # Constraints on probabilities
+    @constraint(model, sum(q) + qK == 1)
+
+    # Constraints on exp vals via KL divergence
+
+    # Finite bounds via a Bretagnolle-Huber-Carol estimator
+    C_alphbet = length(q) + 1 # Key (1) + Coincident bases (m-1) + Non-coincident (1)
+    δ = sqrt((2 * C_alphbet * log(T(2)) - 2 * log(ϵcompPE)) / N)
+    @constraint(model, [δ; q - p_sim; qK - pK^2] in Hypatia.EpiNormInfCone{T,T}(1 + 1 + length(q), true))
+
+    # Key map
+    Ghat = [I(d^2)]
+    Zhat = zgkraus(d)
+    blocks = [(i-1)*d+1:i*d for i ∈ 1:d]
+
+    vec_dim = Cones.svec_length(R, d^2)
+    ω_vec = svec(ω)
+
+    # Conic program 
+    @variable(model, u)
+    @constraint(model, [h_KL; p_ωAB; q] in Hypatia.EpiRelEntropyCone{T}(1 + 2 * length(q), false))
+    β = inv(α)
+    sβ = β < 1 ? -1 : 1
+    @constraint(model, [u; ω_vec] in EpiFastRenyiQKDTriCone{T,Complex{T}}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+    @constraint(model, [h_QKD, qK, pK^2 * sβ * u] in MOI.ExponentialCone())
+    @objective(model, Min, (α / (α - 1)) * (h_KL - h_QKD) / log(T(2)))
+
+    # Optimize
+    set_optimizer(model, Hypatia.Optimizer{T})
+    set_attribute(model, "verbose", true)
+    optimize!(model)
+
+    # Extract results
+    h_renyi = objective_value(model)
+
+    return h_renyi
+end
+
+function _hae_mub_general_true(
+    v::T,
+    d::Integer,
+    N::Integer,
+    pK::T,
+    m::Integer,
+    ϵcompPE::T,
+    α::T
+) where {T<:AbstractFloat}
+    C_alphbet = m + 1
+    δ = sqrt((2 * C_alphbet * log(T(2)) - 2 * log(ϵcompPE)) / N)
+    qK_low = max(T(0), pK^2 - δ)
+    qK_high = min(T(1), pK^2 + δ)
+    f(qK) = _hae_mub_general_true_fixedqK(v, d, N, pK, m, ϵcompPE, α, qK)
+    sol = Optim.optimize(f, qK_low, qK_high, Optim.Brent())
+    display(sol.minimizer)
+    return sol.minimum
+end
+
+function _hae_mub_general_true_fixedqK(
+    v::T,
+    d::Integer,
+    N::Integer,
+    pK::T,
+    m::Integer,
+    ϵcompPE::T,
+    α::T,
+    qK::T
+) where {T<:AbstractFloat}
+    is_complex = true
+    model = GenericModel{T}()
+    hermitian_space = Ket._sdp_parameters(is_complex)[3]
+    R = is_complex ? Complex{T} : T
+
+    # Variables
+    @variable(model, ω[1:d^2, 1:d^2] ∈ hermitian_space)
+    @variable(model, q[1:m])
+    @variable(model, h_QKD)
+    @variable(model, h_KL)
+
+    # Simulated probabilities
+    p_sim = simulated_probabilities_mub(v, d, pK, m)
+    p_ωAB = constraint_probabilities_mub(ω, d, pK, m)
+
+    # Constraint on states
+    @constraint(model, tr(ω) == 1)
+
+    # Constraints on probabilities
+    @constraint(model, sum(q) + qK == 1)
+
+    # Constraints on exp vals via KL divergence
+
+    # Finite bounds via a Bretagnolle-Huber-Carol estimator
+    C_alphbet = length(q) + 1 # Key (1) + Coincident bases (m-1) + Non-coincident (1)
+    δ = sqrt((2 * C_alphbet * log(T(2)) - 2 * log(ϵcompPE)) / N)
+    @constraint(model, [δ; q - p_sim; qK - pK^2] in Hypatia.EpiNormInfCone{T,T}(1 + 1 + length(q), true))
+
+    # Key map
+    Ghat = [I(d^2)]
+    Zhat = zgkraus(d)
+    blocks = [(i-1)*d+1:i*d for i ∈ 1:d]
+
+    vec_dim = Cones.svec_length(R, d^2)
+    ω_vec = svec(ω)
+
+    # Conic program
+    @variable(model, u)
+    @constraint(model, [h_KL; p_ωAB; pK^2; q; qK] in Hypatia.EpiRelEntropyCone{T}(1 + 2 + 2 * length(q), false))
+    γ = inv(2 - inv(α))
+    sγ = γ < 1 ? -1 : 1
+    dim_σ = size(Zhat[1], 2)
+    @variable(model, σ[1:dim_σ, 1:dim_σ], Hermitian)
+    @constraint(model, tr(σ) == 1)
+    σ_vec = svec(σ)
+    @constraint(model, [u; ω_vec; σ_vec] in EpiRenyiQKDTriCone{T,Complex{T}}(γ, Ghat, Zhat, 1 + 2vec_dim; blocks))
+    @constraint(model, [h_QKD, 1, sγ * u] in MOI.ExponentialCone())
+    @objective(model, Min, ((α / (α - 1)) * h_KL + qK * h_QKD / (γ - 1)) / log(T(2)))
+
+    # Optimize
+    set_optimizer(model, Hypatia.Optimizer{T})
+    set_attribute(model, "verbose", true)
+    optimize!(model)
+
+    # Extract results
+    h_renyi = objective_value(model)
+
+    return h_renyi
+end
+
+# Suggested values for a test
+# d = 5; f = 1.16; N = 10^9; pK = 0.5; v = 0.9; m = d + 1; fast = true
+function Aux_mub(d::Integer, f::T, N::Integer, pK::T, v::T, m::Integer = d + 1; fast::Bool = true) where {T}
+
+    # Create output file
+    RATE_MUB = "Aux_mub_f" * string(round(Int, f * 100)) * "_d" * string(d) * ".csv"
+    FILE = open(RATE_MUB, "a")
+    @printf(FILE, "d, f, N, m \n")
+    @printf(FILE, "%d, %.2f, %.2f, %d \n", d, f, log10(N), m)
+    @printf(FILE, "v, pK, a-1, leakEC, SKR \n")
+    close(FILE)
+
+    # Load the epsilons
+    @unpack ϵCR, ϵPA, ϵcompPE = epsilon_coeffs{T}()
+
+    # Calculate EC cost per symbol
+    leak_EC = EC_cost_mub(v, d, f, N, pK, ϵCR)
+
+    #linear spacing
+    npoints = T(10)
+    αmap(i) = (9i + 11npoints - 20) / (10npoints - 10)
+
+    #log spacing
+    #npoints = T(20)
+    #a = 6/(npoints-1)
+    #b = (-7npoints + 1)/(npoints-1)
+    #αmap(i) = 1 + 10^(a*i+b)
+    for i ∈ 1:npoints
+        α = αmap(i)
+        SKR = FiniteSKR(α, Finite_pars(ϵPA, v, d, N, pK, m, ϵcompPE, leak_EC, fast))
+        @printf("α-1 = %.5e, SKR = %.2e \n", α - 1, SKR)
+
+        # Record outputs
+        FILE = open(RATE_MUB, "a")
+        @printf(FILE, "%.2f, %.2f, %.6e, %.6f, %.8e \n", v, pK, α - 1, leak_EC, SKR)
+        close(FILE)
+    end
+end
