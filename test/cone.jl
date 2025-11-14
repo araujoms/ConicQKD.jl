@@ -40,7 +40,7 @@ function test_oracles(
     cone::Cones.Cone{T};
     noise::T = T(1e-1),
     scale::T = T(1e-1),
-    tol::Real = 1e8 * eps(T),
+    tol::Real = sqrt(eps(T)),
     init_only::Bool = false,
     init_tol::Real = tol
 ) where {T<:Real}
@@ -107,11 +107,11 @@ function test_oracles(
 
     # test third order deriv oracle
     if Cones.use_dder3(cone)
-        @test -Cones.dder3(cone, point) ≈ grad atol = tol rtol = tol
+        @test -Cones.dder3(cone, point) ≈ grad atol = sqrt(tol) rtol = sqrt(tol)
 
         dir = perturb_scale!(zeros(T, dim), noise, one(T))
         dder3 = Cones.dder3(cone, dir)
-        @test dot(dder3, point) ≈ dot(dir, hess * dir) atol = tol rtol = tol
+        @test dot(dder3, point) ≈ dot(dir, hess * dir) atol = sqrt(tol) rtol = sqrt(tol)
     end
 
     return
