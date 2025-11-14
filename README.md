@@ -1,7 +1,7 @@
 # ConicQKD
 Implementation of the convex cones introduced in the papers
 
-### Finite-size quantum key distribution rates from Renyi entropies using conic optimization
+### [Finite-size quantum key distribution rates from Renyi entropies using conic optimization](https://arxiv.org/abs/2511.10584)
 #### Mariana Navarro, Andrés González Lorente, Pablo V. Parellada, Carlos Pascual-García, and Mateus Araújo
 
 and
@@ -28,7 +28,7 @@ To constraint a quantum state `ρ` to belong to the von Neumann QKD cone with CP
 ```
 To constraint a quantum state `ρ` to belong to the FastRényiQKD cone with CP maps `Ghat`, `ZGhat`, isometry `S`, and Rényi parameter `β = 1/α` the syntax is
 ```julia
-@constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, ZGhat, 1 + length(ρ_vec); S, blocks)
+@constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,R}(β, Ghat, ZGhat, 1 + length(ρ_vec); S, blocks))
 ```
 To constraint quantum states `ρ`, `σ` to belong to the RényiQKD cone with CP maps `Ghat`, `Zhat`, isometry `S`, and Rényi parameter `γ = α/(2α - 1)` the syntax is
 ```julia
