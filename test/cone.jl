@@ -123,7 +123,7 @@ function test_barrier(
     barrier::Function;
     noise::T = T(1e-1),
     scale::T = T(1e-1),
-    tol::Real = 1e8 * eps(T)
+    tol::Real = sqrt(eps(T))
 ) where {T<:Real}
     Random.seed!(1)
     dim = Cones.dimension(cone)
