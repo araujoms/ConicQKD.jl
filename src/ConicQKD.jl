@@ -31,9 +31,6 @@ import Hypatia.Cones:
 
 import MathOptInterface
 const MOI = MathOptInterface
-const VI = MOI.VariableIndex
-const SAF = MOI.ScalarAffineFunction
-const VV = MOI.VectorOfVariables
 const VAF = MOI.VectorAffineFunction
 
 include("util.jl")
@@ -170,7 +167,7 @@ Base.copy(cone::NewCones) = cone
 function MOI.get(
     opt::Optimizer{T},
     attr::MOI.ConstraintDual,
-    ci::MOI.ConstraintIndex{<:Union{VV,VAF{T}},<:NewSupportedCone{T}}
+    ci::MOI.ConstraintIndex{VAF{T},<:NewSupportedCone{T}}
 ) where {T}
     MOI.check_result_index_bounds(opt, attr)
     i = ci.value
@@ -181,7 +178,7 @@ end
 function MOI.get(
     opt::Optimizer{T},
     attr::MOI.ConstraintPrimal,
-    ci::MOI.ConstraintIndex{<:Union{VV,VAF{T}},<:NewSupportedCone{T}}
+    ci::MOI.ConstraintIndex{VAF{T},<:NewSupportedCone{T}}
 ) where {T}
     MOI.check_result_index_bounds(opt, attr)
     i = ci.value
@@ -191,7 +188,7 @@ end
 
 function MOI.supports_constraint(
     ::Optimizer{T},
-    ::Type{<:Union{VV,VAF{T}}},
+    ::Type{VAF{T}},
     ::Type{<:Union{MOI.Zeros,NewSupportedCone{T}}}
 ) where {T<:Real}
     return true
