@@ -40,5 +40,5 @@ To constraint quantum states `ρ`, `σ` to belong to the RényiQKD cone with CP 
 - `T` is the floating point type to be used (e.g. `Float64`, `Double64`, `Float128`, `BigFloat`, etc.).
 - `R` is either equal to `T`, in order to optimize over real matrices, or equal to `Complex{T}` in order to optimize over complex matrices.
 - `Ghat`, `ZGhat`, and `Zhat` encode the CP maps as vectors of Kraus operators.
-- `blocks` is an optional keyword argument specifying the block structure of `Zhat` as a vector of vectors. For example, if `Zhat` maps a 4x4 `ρ` to a matrix `M` such that only `M[1:2,1:2]` and `M[3:4,3:4]` are nonzero, then `blocks` should be `[1:2, 3:4]`. If this argument is omitted the computation will be considerably slower.
+- `blocks` is an optional keyword argument specifying the block structure of `Zhat` or `ZGhat` as a vector of ranges. For example, if the result of the map is a 4x4 matrix `M` such that only `M[1:2,1:2]` and `M[3:4,3:4]` are nonzero, then `blocks` should be `[1:2, 3:4]`. If this argument is omitted the computation will be considerably slower.
 - `S` is an optional keyword argument, assumed to be identity if ommitted.
