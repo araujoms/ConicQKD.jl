@@ -84,7 +84,7 @@ function hae_overlap(v::T, d::Integer, α::T = T(11) / 10; renyi = false, fast =
     vec_dim = length(ρ_vec)
 
     Ghat = [I(d^2)]
-    Zhat = zkraus(d)
+    ZGhat = Zhat = zkraus(d)
     blocks = [(i-1)*d+1:i*d for i ∈ 1:d]
 
     @variable(model, h)
@@ -92,7 +92,7 @@ function hae_overlap(v::T, d::Integer, α::T = T(11) / 10; renyi = false, fast =
     if renyi
         if fast
             β = inv(α)
-            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, ZGhat, 1 + vec_dim; blocks))
         else
             @variable(model, σ[1:d^2, 1:d^2], Symmetric)
             @constraint(model, tr(σ) == 1)
@@ -101,7 +101,7 @@ function hae_overlap(v::T, d::Integer, α::T = T(11) / 10; renyi = false, fast =
             @constraint(model, [h; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + 2vec_dim; blocks))
         end
     else
-        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim; blocks))
+        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, ZGhat, 1 + vec_dim; blocks))
     end
 
     set_optimizer(model, Hypatia.Optimizer{T})

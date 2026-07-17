@@ -27,7 +27,7 @@ function hae_bb84_general(qz::T, qx::T, α::T = T(11) / 10; renyi = false, fast 
     @constraint(model, tr(ρ) == 1)
 
     Ghat = [I(dim_ρ)]
-    Zhat = zkraus()
+    ZGhat = Zhat = zkraus()
     blocks = [1:2, 3:4]
 
     ρ_vec = svec(ρ)
@@ -38,7 +38,7 @@ function hae_bb84_general(qz::T, qx::T, α::T = T(11) / 10; renyi = false, fast 
     if renyi
         if fast
             β = inv(α)
-            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + vec_dim; blocks))
+            @constraint(model, [h; ρ_vec] in EpiFastRenyiQKDTriCone{T,T}(β, Ghat, ZGhat, 1 + vec_dim; blocks))
         else
             @variable(model, σ[1:dim_ρ, 1:dim_ρ], Symmetric)
             @constraint(model, tr(σ) == 1)
@@ -47,7 +47,7 @@ function hae_bb84_general(qz::T, qx::T, α::T = T(11) / 10; renyi = false, fast 
             @constraint(model, [h; ρ_vec; σ_vec] in EpiRenyiQKDTriCone{T,T}(β, Ghat, Zhat, 1 + 2vec_dim; blocks))
         end
     else
-        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, Zhat, 1 + vec_dim; blocks))
+        @constraint(model, [h; ρ_vec] in EpiQKDTriCone{T,T}(Ghat, ZGhat, 1 + vec_dim; blocks))
     end
 
     set_optimizer(model, Hypatia.Optimizer{T})
