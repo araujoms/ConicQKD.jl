@@ -3,7 +3,6 @@ using JuMP
 using ConicQKD
 using Ket
 import Hypatia
-import Hypatia.Cones
 import JLD2
 
 "Produces a vector of `d` + 1 numerical MUBs for 2 ≤ `d` ≤ 13. For `d` = 6, 10, 12 the bases are
@@ -11,13 +10,6 @@ only roughly unbiased."
 function numerical_mubs(d)
     mub_dict = JLD2.load("mubs.jld2")
     return mub_dict["mubs"][d]
-end
-
-"Decoherence map acting on Alice's key storage"
-function zgmap(rho::AbstractMatrix, d::Integer)
-    K = zgkraus(d)
-    zgrho = sum(K[i] * rho * K[i] for i ∈ 1:d)
-    return Hermitian(zgrho)
 end
 
 function zgkraus(d::Integer)
@@ -92,8 +84,8 @@ function hae_mub(
     @constraint(model, corr_ρ .== corr_iso)
     @constraint(model, tr(ρ) == 1)
 
-    vec_dim = Cones.svec_length(R, d^2)
     ρ_vec = svec(ρ)
+    vec_dim = length(ρ_vec)
 
     Ghat = [I(d^2)]
     Zhat = zgkraus(d)

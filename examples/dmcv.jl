@@ -4,7 +4,6 @@ using LinearAlgebra
 using JuMP
 using Ket
 import Hypatia
-import Hypatia.Cones
 import Integrals
 
 function integrand(vars, pars)
@@ -176,8 +175,8 @@ function hbe_dmcv_general(
     block_size = 4 * (Nc + 1)
     blocks = [(i-1)*block_size+1:i*block_size for i ∈ 1:4]
 
-    vec_dim = Cones.svec_length(Complex, dim_ρAB)
     ρAB_vec = svec(ρAB)
+    vec_dim = length(ρAB_vec)
 
     @variable(model, h)
     @objective(model, Min, h)
@@ -314,6 +313,3 @@ end
 function rate_dmcv(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFloat}
     return hbe_dmcv(Nc, L, ξ, α) - hba_dmcv(L, ξ, α)
 end
-
-#f64 2.801905307769914e-8
-#d64 6.03065794378403782333344081012188704e-14

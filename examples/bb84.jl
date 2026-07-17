@@ -3,7 +3,6 @@ using JuMP
 using LinearAlgebra
 using Ket
 import Hypatia
-import Hypatia.Cones
 
 function zkraus()
     K = [kron(proj(i, 2), I(2)) for i ∈ 1:2]
@@ -31,8 +30,8 @@ function hae_bb84_general(qz::T, qx::T, α::T = T(11) / 10; renyi = false, fast 
     Zhat = zkraus()
     blocks = [1:2, 3:4]
 
-    vec_dim = Cones.svec_length(T, dim_ρ)
     ρ_vec = svec(ρ)
+    vec_dim = length(ρ_vec)
 
     @variable(model, h)
     @objective(model, Min, h)
@@ -79,8 +78,8 @@ function hae_bb84_reducedz(qx::T, α::T = T(11) / 10; renyi = false, fast = true
     W_ZG = [[1, 0, 0, 0] [0, 0, 0, 1]]
     ZGhat = [V2'Zi * V for Zi ∈ Zhat]
 
-    vec_dim = Cones.svec_length(T, dim_ρ)
     ρ_vec = svec(ρ)
+    vec_dim = length(ρ_vec)
 
     @variable(model, h)
     @objective(model, Min, h)
@@ -135,8 +134,8 @@ function hae_bb84_reducedx(qz::T, α::T = T(11) / 10; renyi = false, fast = true
     ZGhat = [Zi * V for Zi ∈ Zhat]
     blocks = [1:2, 3:4]
 
-    vec_dim = Cones.svec_length(T, dim_ρ)
     ρ_vec = svec(ρ)
+    vec_dim = length(ρ_vec)
 
     @variable(model, h)
     @objective(model, Min, h)

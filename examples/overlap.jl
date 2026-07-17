@@ -3,7 +3,6 @@ using JuMP
 using ConicQKD
 using Ket
 import Hypatia
-import Hypatia.Cones
 
 function zkraus(d::Integer)
     K = [kron(proj(i, d), I(d)) for i ∈ 1:d]
@@ -81,8 +80,8 @@ function hae_overlap(v::T, d::Integer, α::T = T(11) / 10; renyi = false, fast =
     @constraint(model, corr_ρ .== corr_iso)
     @constraint(model, tr(ρ) == 1)
 
-    vec_dim = Cones.svec_length(T, d^2)
     ρ_vec = svec(ρ)
+    vec_dim = length(ρ_vec)
 
     Ghat = [I(d^2)]
     Zhat = zkraus(d)
