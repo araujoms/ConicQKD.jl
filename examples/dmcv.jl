@@ -209,7 +209,6 @@ function hbe_dmcv_general(
     else
         return value(h) / log(T(2))
     end
-    return objective_value(model)
 end
 
 coherent(Nc::Integer, β::Number) = exp(-abs2(β) / 2) * [β^n / sqrt(factorial(n)) for n ∈ 0:Nc]
@@ -294,7 +293,6 @@ function hbe_dmcv_reduced(
     else
         return value(h) / log(T(2))
     end
-    return objective_value(model)
 end
 
 function hbe_dmcv(Nc::Integer, L::T, ξ::T, α::T) where {T<:AbstractFloat}

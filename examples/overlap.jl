@@ -113,7 +113,6 @@ function hae_overlap(v::T, d::Integer, α::T = T(11) / 10; renyi = false, fast =
     else
         return value(h) / log(T(2))
     end
-    return objective_value(model)
 end
 
 rate_overlap(v::T, d::Integer) where {T<:AbstractFloat} = hae_overlap(v, d) - hab_overlap(v, d)

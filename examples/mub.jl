@@ -117,7 +117,6 @@ function hae_mub(
     else
         return value(h) / log(T(2))
     end
-    return objective_value(model)
 end
 
 rate_mub(v::AbstractFloat, d::Integer, n::Integer = d + 1; analytical_mub::Bool = false) =

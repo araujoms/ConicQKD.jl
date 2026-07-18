@@ -59,7 +59,6 @@ function hae_bb84_general(qz::T, qx::T, α::T = T(11) / 10; renyi = false, fast 
     else
         return value(h) / log(T(2))
     end
-    return objective_value(model)
 end
 
 isometryz(::Type{T}) where {T} = [[1, 0, 0, 1] [1, 0, 0, -1]] / sqrt(T(2))
@@ -114,7 +113,6 @@ function hae_bb84_reducedz(qx::T, α::T = T(11) / 10; renyi = false, fast = true
     else
         return value(h) / log(T(2))
     end
-    return objective_value(model)
 end
 
 isometryx(::Type{T}) where {T<:AbstractFloat} = [[1, 0, 0, 1] [0, 1, 1, 0]] / sqrt(T(2))
@@ -167,7 +165,6 @@ function hae_bb84_reducedx(qz::T, α::T = T(11) / 10; renyi = false, fast = true
     else
         return value(h) / log(T(2))
     end
-    return objective_value(model)
 end
 
 hae_bb84_analytic(qz, qx) = 1 - binary_entropy(qx)
