@@ -13,7 +13,7 @@ and
 
 First you need to install [Julia](https://docs.julialang.org/en/v1/manual/getting-started/). From within Julia, enter the package manager by typing `]`. Then install ConicQKD:
 ```julia
-pkg> add https://github.com/araujoms/ConicQKD.jl
+add ConicQKD
 ```
 This will automatically install all dependencies. The main one is the solver [Hypatia](https://github.com/jump-dev/Hypatia.jl), which this package extends.
 ## Usage
