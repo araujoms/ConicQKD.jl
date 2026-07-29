@@ -1,18 +1,5 @@
-#=
-Copyright (c) 2018-2022 Chris Coey, Lea Kapelevich, and contributors
-
-This Julia package Hypatia.jl is released under the MIT license; see LICENSE
-file in the root directory or at https://github.com/jump-dev/Hypatia.jl
-=#
-
-#=
-run barrier tests
-=#
-
 using Test
-using Printf
 using LinearAlgebra
-import Hypatia.Cones
 import ConicQKD: svec, smat, skron, d_spectral!, d2_spectral, Δ3generic
 
 @testset "array tests" begin

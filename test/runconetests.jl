@@ -53,6 +53,16 @@ end
         end
     end
 
+    println("\nstarting duality tests")
+    @testset "duality tests" begin
+        real_types = [Float64]
+        @testset "$cone" for T ∈ real_types, cone ∈ cone_types(T)
+            println("$cone")
+            test_time = @elapsed test_dual(cone)
+            @printf("%8.2e seconds\n", test_time)
+        end
+    end
+
     #    println("\nstarting time/allocation measurements")
     #    @testset "allocation tests" begin
     #        real_types = [

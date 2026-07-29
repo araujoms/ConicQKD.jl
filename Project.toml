@@ -16,6 +16,7 @@ JuMPExt = "JuMP"
 
 [compat]
 DoubleFloats = "1.4.0"
+Dualization = "0.7.7"
 ForwardDiff = "0.10.38"
 GenericLinearAlgebra = "0.3.15 - 0.4"
 Hypatia = "0.10"
@@ -28,10 +29,11 @@ julia = "1.10"
 
 [extras]
 DoubleFloats = "497a8b3b-efae-58df-a0af-a86822472b78"
+Dualization = "191a621a-6537-11e9-281d-650236a99e60"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["ForwardDiff", "Printf", "Random", "Test", "DoubleFloats"]
+test = ["ForwardDiff", "Printf", "Random", "Test", "DoubleFloats", "JuMP", "Dualization"]

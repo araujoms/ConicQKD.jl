@@ -18,14 +18,11 @@ import Hypatia
 import Hypatia.PolyUtils
 import Hypatia.Cones
 import Hypatia.RealOrComplex
-import ConicQKD.EpiQKDTri
-import ConicQKD.EpiRenyiQKDTri
-import ConicQKD.EpiFastRenyiQKDTri
-
-import ConicQKD.kraus2matrix
-import ConicQKD.skron
-import ConicQKD.svec
-import ConicQKD.smat
+import ConicQKD: EpiQKDTri, EpiRenyiQKDTri, EpiFastRenyiQKDTri
+import ConicQKD: EpiQKDTriCone, EpiRenyiQKDTriCone, EpiFastRenyiQKDTriCone
+import ConicQKD: kraus2matrix, skron, svec, smat
+import JuMP
+import Dualization
 
 function random_state(::Type{T}, d::Integer, k::Integer = d) where {T}
     #Random.seed!(1)
@@ -289,21 +286,6 @@ function random_unitary(::Type{T}, d::Integer) where {T<:Number}
     return Q * Λ
 end
 
-function random_protocol(din::Integer, dout::Integer, R::Type)
-    dim = 1 + Cones.svec_length(R, din^2)
-
-    U = random_unitary(R, dout)
-    V = U[:, 1:din]
-
-    G = [random_unitary(R, din^2)]
-    #    G = [R.(I(din^2))]
-    Z = [kron(proj(R, i, dout) * V, I(din)) for i ∈ 1:dout]
-
-    blocks = [(i-1)*din+1:i*din for i ∈ 1:dout]
-
-    return G, Z, dim, blocks
-end
-
 function random_point!(point, cone::EpiQKDTri{T,R}) where {T,R}
     rho = random_state(R, cone.d)
     Grho = smat(cone.G * svec(rho))
@@ -315,13 +297,13 @@ end
 
 function test_oracles(cone::Type{EpiQKDTri{T,R}}) where {T,R}
     din, dout = 3, 4
-    G, Z, dim, blocks = random_protocol(din, dout, R)
-    test_oracles(cone(G, Z, dim; blocks); init_tol = Inf)
+    _, G, Z, rho_dim, blocks, _ = random_protocol(cone, din, dout)
+    test_oracles(cone(G, Z, 1 + rho_dim; blocks); init_tol = Inf)
 end
 
 function test_barrier(cone::Type{EpiQKDTri{T,R}}) where {T,R}
     din, dout = 3, 4
-    gkraus, zkraus, dim, blocks = random_protocol(din, dout, R)
+    _, gkraus, zkraus, rho_dim, blocks, _ = random_protocol(cone, din, dout)
     G = kraus2matrix(gkraus)
     Z = kraus2matrix(zkraus)
 
@@ -333,13 +315,13 @@ function test_barrier(cone::Type{EpiQKDTri{T,R}}) where {T,R}
         relative_entropy = -von_neumann_entropy(GrhoH) + von_neumann_entropy(ZrhoH)
         return -real(log(u - relative_entropy)) - logdet_pd(rhoH)
     end
-    return test_barrier(cone(gkraus, zkraus, dim; blocks), barrier)
+    return test_barrier(cone(gkraus, zkraus, 1 + rho_dim; blocks), barrier)
 end
 
 function show_time_alloc(cone::Type{EpiQKDTri{T,R}}) where {T,R}
     din, dout = 4, 5
-    G, Z, dim, blocks = random_protocol(din, dout, R)
-    return show_time_alloc(cone(G, Z, dim; blocks))
+    _, G, Z, rho_dim, blocks, _ = random_protocol(cone, din, dout)
+    return show_time_alloc(cone(G, Z, 1 + rho_dim; blocks))
 end
 
 function random_point!(point, cone::EpiRenyiQKDTri{T,R}) where {T,R}
@@ -376,8 +358,8 @@ function test_oracles(cone::Type{<:EpiFastRenyiQKDTri{T,R}}) where {T,R}
     test_oracles(cone(α, G, Z, 1 + rho_dim; S, blocks); init_tol = Inf)
 end
 
-const RenyiCones{T,R} = Union{EpiRenyiQKDTri{T,R},EpiFastRenyiQKDTri{T,R}}
-function random_protocol(cone::Type{<:RenyiCones{T,R}}, din::Integer, dout::Integer) where {T,R}
+const EntropyCones{T,R} = Union{EpiQKDTri{T,R},EpiRenyiQKDTri{T,R},EpiFastRenyiQKDTri{T,R}}
+function random_protocol(::Type{<:EntropyCones{T,R}}, din::Integer, dout::Integer) where {T,R}
     α = T(9) / 10
 
     rho_dim = Cones.svec_length(R, din^2)
@@ -386,7 +368,6 @@ function random_protocol(cone::Type{<:RenyiCones{T,R}}, din::Integer, dout::Inte
     V = U[:, 1:din]
 
     G = [random_unitary(R, din^2)]
-    #G = [R.(I(din^2))]
     Z = [kron(proj(R, i, dout) * V, I(din)) for i ∈ 1:dout]
 
     blocks = [(i-1)*din+1:i*din for i ∈ 1:dout]
@@ -444,4 +425,33 @@ function show_time_alloc(cone::Type{EpiFastRenyiQKDTri{T,R}}) where {T,R}
     din, dout = 3, 4
     α, gkraus, zkraus, rho_dim, blocks, S = random_protocol(cone, din, dout)
     return show_time_alloc(cone(α, gkraus, zkraus, 1 + rho_dim; S, blocks))
+end
+
+function test_dual(conetype::Type{<:EntropyCones{T,R}}) where {T,R}
+    din, dout = 2, 3
+    α, gkraus, zkraus, rho_dim, blocks, S = random_protocol(conetype, din, dout)
+    sα = α < 1 ? -1 : 1
+
+    model = JuMP.GenericModel{T}()
+    ρ = random_state(R, din^2)
+    σ = random_state(R, din^2)
+    JuMP.@variable(model, h)
+    if conetype <: EpiQKDTri{T,R}
+        JuMP.@constraint(model, [h; svec(ρ)] in EpiQKDTriCone{T,R}(gkraus, zkraus, 1 + rho_dim; blocks))
+    elseif conetype <: EpiFastRenyiQKDTri{T,R}
+        JuMP.@constraint(model, [h; svec(ρ)] in EpiFastRenyiQKDTriCone{T,R}(α, gkraus, zkraus, 1 + rho_dim; S, blocks))
+    else
+        JuMP.@constraint(model, [h; svec(ρ); svec(σ)] in EpiRenyiQKDTriCone{T,R}(α, gkraus, zkraus, 1 + 2rho_dim; S, blocks))
+    end
+    JuMP.@objective(model, Min, h)
+    JuMP.set_optimizer(model, Hypatia.Optimizer{T})
+    JuMP.set_silent(model)
+    JuMP.optimize!(model)
+    primal_objective = JuMP.objective_value(model)
+    JuMP.set_optimizer(model, Dualization.dual_optimizer(Hypatia.Optimizer{T}; coefficient_type = T))
+    JuMP.optimize!(model)
+    dual_objective = JuMP.objective_value(model)
+    @test primal_objective ≈ dual_objective
+
+    return
 end

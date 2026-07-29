@@ -63,6 +63,15 @@ end
 export EpiQKDTriCone
 
 MOI.dimension(cone::EpiQKDTriCone) = cone.dim
+MOI.dual_set(cone::EpiQKDTriCone{T,R}) where {T,R} =
+    EpiQKDTriCone{T,R}(
+        cone.Gkraus,
+        cone.Zkraus,
+        cone.dim;
+        blocks = cone.blocks,
+        use_dual = !cone.use_dual
+    )
+MOI.dual_set_type(T::Type{<:EpiQKDTriCone}) = T
 
 function Hypatia.cone_from_moi(::Type{T}, cone::EpiQKDTriCone{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     return EpiQKDTri{T,R}(cone.Gkraus, cone.Zkraus, cone.dim; blocks = cone.blocks, use_dual = cone.use_dual)
@@ -97,6 +106,17 @@ end
 export EpiRenyiQKDTriCone
 
 MOI.dimension(cone::EpiRenyiQKDTriCone) = cone.dim
+MOI.dual_set(cone::EpiRenyiQKDTriCone{T,R}) where {T,R} =
+    EpiRenyiQKDTriCone{T,R}(
+        cone.α,
+        cone.Gkraus,
+        cone.Zkraus,
+        cone.dim;
+        S = cone.S,
+        blocks = cone.blocks,
+        use_dual = !cone.use_dual
+    )
+MOI.dual_set_type(T::Type{<:EpiRenyiQKDTriCone}) = T
 
 function Hypatia.cone_from_moi(::Type{T}, cone::EpiRenyiQKDTriCone{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     return EpiRenyiQKDTri{T,R}(
@@ -139,6 +159,17 @@ end
 export EpiFastRenyiQKDTriCone
 
 MOI.dimension(cone::EpiFastRenyiQKDTriCone) = cone.dim
+MOI.dual_set(cone::EpiFastRenyiQKDTriCone{T,R}) where {T,R} =
+    EpiFastRenyiQKDTriCone{T,R}(
+        cone.α,
+        cone.Gkraus,
+        cone.Zkraus,
+        cone.dim;
+        S = cone.S,
+        blocks = cone.blocks,
+        use_dual = !cone.use_dual
+    )
+MOI.dual_set_type(T::Type{<:EpiFastRenyiQKDTriCone}) = T
 
 function Hypatia.cone_from_moi(::Type{T}, cone::EpiFastRenyiQKDTriCone{T,R}) where {T<:Real,R<:RealOrComplex{T}}
     return EpiFastRenyiQKDTri{T,R}(
