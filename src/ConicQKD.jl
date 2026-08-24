@@ -23,11 +23,12 @@ import Hypatia.Cones:
     hess_prod!,
     use_dder3,
     update_dder3_aux,
-    dder3
+    dder3,
+    pretty_name
 
 #these are just to be used
 import Hypatia.Cones:
-    svec_side, svec_to_smat!, smat_to_svec!, spectral_outer!, Δ2!, Δ3!, eig_dot_kron!, alloc_hess!, symm_kron!, is_feas
+    svec_side, svec_to_smat!, smat_to_svec!, spectral_outer!, Δ2!, Δ3!, eig_dot_kron!, alloc_hess!, symm_kron!, is_feas, use_dual_barrier
 
 import MathOptInterface
 const MOI = MathOptInterface

@@ -1264,3 +1264,9 @@ function dder3(cone::EpiFastRenyiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:
 
     return dder3  # -∇^3 barrier[ξ,ξ] / 2
 end
+
+function pretty_name(cone::EpiFastRenyiQKDTri)
+    realorcomplex = cone.is_complex ? "complex " : "real "
+    dualorprimal = use_dual_barrier(cone) ? "dual " : ""
+    return realorcomplex * dualorprimal * "fast Rényi QKD"
+end

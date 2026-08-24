@@ -603,3 +603,9 @@ function dder3(cone::EpiQKDTri{T,R}, dir::AbstractVector{T}) where {T<:Real,R<:R
 
     return dder3  # -∇^3 barrier[ξ,ξ] / 2
 end
+
+function pretty_name(cone::EpiQKDTri)
+    realorcomplex = cone.is_complex ? "complex " : "real "
+    dualorprimal = use_dual_barrier(cone) ? "dual " : ""
+    return realorcomplex * dualorprimal * "von Neumann QKD"
+end
