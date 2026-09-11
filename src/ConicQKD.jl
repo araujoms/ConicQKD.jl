@@ -23,11 +23,8 @@ import Hypatia.Cones:
     hess_prod!,
     use_dder3,
     update_dder3_aux,
-    dder3
-
-if isdefined(Hypatia.Cones, :pretty_name)
-    import Hypatia.Cones.pretty_name
-end
+    dder3,
+    pretty_name
 
 #these are just to be used
 import Hypatia.Cones:
