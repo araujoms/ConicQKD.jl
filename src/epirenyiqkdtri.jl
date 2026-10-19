@@ -312,7 +312,7 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiRenyiQKDTri{T,R}) w
     Gmat = cone.Gmat
     Zmat = cone.Zmat
 
-    h(x) = x^((1 - cone.α) / cone.α)
+    h(x) = x^(inv(cone.α) - 1)
 
     γ, δ = _initial_γδ(cone.α, cone.ρd)
 
@@ -383,7 +383,7 @@ function update_feas(cone::EpiRenyiQKDTri)
     Gmat = cone.Gmat
     Zmat = cone.Zmat
 
-    h(x) = x^((1 - cone.α) / cone.α)
+    h(x) = x^(inv(cone.α) - 1)
 
     cone.is_feas = false
 
@@ -462,9 +462,6 @@ function update_grad(cone::EpiRenyiQKDTri)
     ZGmat = cone.ZGmat
     ZGmat2 = cone.ZGmat2
 
-    h(x) = x^(1 / α - 1)
-    dh(x) = (1 / α - 1) * x^(1 / α - 2)
-
     zi = inv(cone.z)
     cone.grad[1] = -zi
 
@@ -500,8 +497,7 @@ function update_grad(cone::EpiRenyiQKDTri)
         mul!(ZGmat2[i], Zσ_U[i]', ZGmat[i])
         mul!(cone.DhZmeat[i], ZGmat2[i], ZGmat2[i]', α, false)
     end
-    dhZσ_λ = [dh.(v) for v ∈ Zσ_λ]
-    Δ2generic!.(cone.Δ2_h_Zσ, Zσ_λ, cone.hZσ_λ, dhZσ_λ)
+    Δ2pow!.(cone.Δ2_h_Zσ, Zσ_λ, Ref(inv(α) - 1), Ref(one(α)))
     fill!(cone.σmat, 0)
     for i ∈ eachindex(blocks)
         Zmat2[i] .= cone.Δ2_h_Zσ[i] .* cone.DhZmeat[i]
@@ -538,20 +534,15 @@ function update_hess_aux(cone::EpiRenyiQKDTri)
 
     α = cone.α
 
-    g(x) = x^α
-    dg(x) = α * x^(α - 1)
-    d2g(x) = α * (α - 1) * x^(α - 2)
-    g̃(x) = α * x^α
-    dg̃(x) = α^2 * x^(α - 1)
-    h(x) = x^(1 / α - 1)
-    dh(x) = (1 / α - 1) * x^(1 / α - 2)
-    d2h(x) = (1 / α - 1) * (1 / α - 2) * x^(1 / α - 3)
+    # dg(x) = α * x^(α - 1)
+    # g̃(x) = α * x^α
+    # h(x) = x^(1 / α - 1)
 
     λ_ZGZ = cone.ZG_fact.S .^ 2
     Zσ_λ = [fact.values for fact ∈ cone.Zσ_fact]
-    Δ2generic!(cone.Δ2_dg_ZGZ, λ_ZGZ, dg.(λ_ZGZ), d2g.(λ_ZGZ))
-    Δ2generic!(cone.Δ2_g̃_ZGZ, λ_ZGZ, g̃.(λ_ZGZ), dg̃.(λ_ZGZ))
-    Δ3generic!.(cone.Δ3_h_Zσ, cone.Δ2_h_Zσ, Zσ_λ, [d2h.(v) for v ∈ Zσ_λ])
+    Δ2pow!(cone.Δ2_dg_ZGZ, λ_ZGZ, α - 1, α)
+    Δ2pow!(cone.Δ2_g̃_ZGZ, λ_ZGZ, α, α)
+    Δ3pow!.(cone.Δ3_h_Zσ, cone.Δ2_h_Zσ, Zσ_λ, Ref(inv(α) - 1), Ref(one(α)))
 
     for i ∈ eachindex(cone.blocks)
         for j ∈ 1:cone.Zd[i]
@@ -863,16 +854,6 @@ function update_hess(cone::EpiRenyiQKDTri)
     ds_h_Zσ = cone.ds_h_Zσ
     sqrtShZσ = cone.sqrtShZσ
 
-    g(x) = x^α
-    dg(x) = α * x^(α - 1)
-    d2g(x) = α * (α - 1) * x^(α - 2)
-    g̃(x) = α * x^α
-    dg̃(x) = α^2 * x^(α - 1)
-
-    h(x) = x^(1 / α - 1)
-    dh(x) = (1 / α - 1) * x^(1 / α - 2)
-    d2h(x) = (1 / α - 1) * (1 / α - 2) * x^(1 / α - 3)
-
     H[1, 1] = abs2(zi) #∇hh = 1/z^2
     @views Hρρ = H[cone.ρ_idxs, cone.ρ_idxs]
     @views Hρσ = H[cone.ρ_idxs, cone.σ_idxs]
@@ -972,12 +953,10 @@ function update_dder3_aux(cone::EpiRenyiQKDTri)
     cone.hess_aux_updated || update_hess_aux(cone)
 
     α = cone.α
-    d2g̃(x) = α^2 * (α - 1) * x^(α - 2)
-    d3g(x) = α * (α - 1) * (α - 2) * x^(α - 3)
 
     λ_ZGZ = cone.ZG_fact.S .^ 2  # ZS^½ G ZS^½ = U Λ^2 U'
-    Δ3generic!(cone.Δ3_g̃_ZGZ, cone.Δ2_g̃_ZGZ, λ_ZGZ, d2g̃.(λ_ZGZ))  # D^2 g̃
-    Δ3generic!(cone.Δ3_dg_ZGZ, cone.Δ2_dg_ZGZ, λ_ZGZ, d3g.(λ_ZGZ))  # D^2 g'
+    Δ3pow!(cone.Δ3_g̃_ZGZ, cone.Δ2_g̃_ZGZ, λ_ZGZ, α, α)  # D^2 g̃
+    Δ3pow!(cone.Δ3_dg_ZGZ, cone.Δ2_dg_ZGZ, λ_ZGZ, α - 1, α)  # D^2 g'
 
     cone.dder3_aux_updated = true
     return
@@ -1352,7 +1331,7 @@ function d3Ψdσ!(
     for i ∈ eachindex(blocks)
         fill!(Zmat[i], 0)
         @inbounds for k ∈ 1:cone.Zd[i], j ∈ 1:k
-            Δ4generic_ij!(cone.Δ4_ij_h_Zσ[i], j, k, Δ3_h_Zσ[i], Zσ_λ[i], d3h.(Zσ_λ[i]))
+            Δ4pow_ij!(cone.Δ4_ij_h_Zσ[i], j, k, Δ3_h_Zσ[i], Zσ_λ[i], inv(α) - 1, one(α))
             for b ∈ 1:cone.Zd[i]
                 for a ∈ 1:cone.Zd[i]
                     temp = 2 * cone.DhZmeat[i][j, b] * UZξU[i][b, a] * UZξU[i][a, k]

@@ -274,20 +274,28 @@ function applykraus_adj!(result, K, X, temp)
     return result
 end
 
-function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector{T}) where {T<:Real}
-    rteps = cbrt(eps(T))
+# (a^α - b^α)/(a - b) = α * m^(α - 1) * ((1+r)^α - (1-r)^α)/(2*α*r)
+# where m = (a+b)/2 and r = (a-b)/(a+b)
+# this is an accurate version of ((1+r)^α - (1-r)^α)/(2*α*r)
+powdiff(r::T, α::T) where {T<:Real} = ifelse(iszero(r), one(r), (expm1(α*log1p(r)) - expm1(α*log1p(-r)))/(2*α*r))
+
+function Δ2pow!(Δ2::Matrix{T}, λ::Vector{T}, α::T, c::T) where {T<:Real}
     d = length(λ)
 
+    coeff = c * α
     @inbounds for j ∈ 1:d
+        λⱼ = λ[j]
         for i ∈ 1:(j-1)
-            λ_ij = λ[i] - λ[j]
-            if abs(λ_ij) < rteps
-                Δ2[i, j] = (dfλ[i] + dfλ[j]) / 2
+            λᵢ = λ[i]
+            s = λⱼ + λᵢ
+            δ = λⱼ - λᵢ
+            Δ2[i, j] = if δ < 0.95 * s
+                coeff * (s/2)^(α-1) * powdiff(δ/s, α)
             else
-                Δ2[i, j] = (fλ[i] - fλ[j]) / λ_ij
+                c * (λⱼ^α - λᵢ^α) / δ
             end
         end
-        Δ2[j, j] = dfλ[j]
+        Δ2[j, j] = coeff * λ[j] ^ (α - 1)
     end
 
     # make symmetric
@@ -295,24 +303,27 @@ function Δ2generic!(Δ2::Matrix{T}, λ::Vector{T}, fλ::Vector{T}, dfλ::Vector
     return Δ2
 end
 
-function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vector{T}) where {T<:Real}
-    rteps = eps(T)^(2/9)
+function Δ3pow!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, α::T, c::T) where {T<:Real}
+    rteps = cbrt(eps(T))
     d = length(λ)
 
+    coeff = c * α * (α - 1) / 2
+
     @inbounds for k ∈ 1:d, j ∈ 1:k, i ∈ 1:j
-        λ_j = λ[j]
-        λ_k = λ[k]
-        λ_jk = λ_j - λ_k
-        if abs(λ_jk) < rteps
-            λ_i = λ[i]
-            λ_ij = λ_i - λ_j
-            if abs(λ_ij) < rteps
-                t = (d2fλ[i] + d2fλ[j] + d2fλ[k]) / 6
+        λⱼ = λ[j]
+        λₖ = λ[k]
+        λⱼₖ = λⱼ - λₖ
+        if abs(λⱼₖ) < rteps * (λⱼ + λₖ)
+            λᵢ = λ[i]
+            λᵢⱼ = λᵢ - λⱼ
+            if abs(λᵢⱼ) < rteps * (λᵢ + λⱼ)
+                m = (λᵢ + λⱼ + λₖ) / 3
+                t = coeff * m ^ (α - 2)
             else
-                t = (Δ2[i, j] - Δ2[j, k]) / λ_ij
+                t = (Δ2[i, j] - Δ2[j, k]) / (λᵢ - λₖ)
             end
         else
-            t = (Δ2[i, j] - Δ2[i, k]) / λ_jk
+            t = (Δ2[i, j] - Δ2[i, k]) / λⱼₖ
         end
 
         Δ3[i, j, k] = Δ3[i, k, j] = Δ3[j, i, k] = Δ3[j, k, i] = Δ3[k, i, j] = Δ3[k, j, i] = t
@@ -321,66 +332,33 @@ function Δ3generic!(Δ3::Array{T,3}, Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vect
     return Δ3
 end
 
-function Δ4generic!(Δ4::Array{T,4}, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
-    rteps = eps(T)^(4/27)
+function Δ4pow_ij!(Δ4_ij::Matrix{T}, i::Int, j::Int, Δ3::Array{T,3}, λ::Vector{T}, α::T, c::T) where {T<:Real}
+    rteps = eps(T)^(2/9)
     d = length(λ)
+    λᵢ = λ[i]
+    λⱼ = λ[j]
 
-    @inbounds for l ∈ 1:d, k ∈ 1:l, j ∈ 1:k, i ∈ 1:j
-        λ_i, λ_j, λ_k, λ_l = λ[i], λ[j], λ[k], λ[l]
-        λ_ij = λ_i - λ_j
-        λ_ik = λ_i - λ_k
-        λ_il = λ_i - λ_l
-        B_ij = (abs(λ_ij) < rteps)
-        B_ik = (abs(λ_ik) < rteps)
-        B_il = (abs(λ_il) < rteps)
-
-        if B_ij && B_ik && B_il
-            t = (d3fλ[i] + d3fλ[j] + d3fλ[k] + d3fλ[l]) / 24
-        elseif B_ik && B_il
-            t = (Δ3[i, i, i] - Δ3[i, i, j]) / λ_ij
-        elseif B_il
-            t = (Δ3[i, i, j] - Δ3[i, j, k]) / λ_ik
-        else
-            t = (Δ3[i, j, k] - Δ3[j, k, l]) / λ_il
-        end
-
-        # Assign symmetrically to all permutations of the 4 indices
-        #! format: off
-        Δ4[i,j,k,l] = Δ4[i,j,l,k] = Δ4[i,k,j,l] = Δ4[i,k,l,j] =
-        Δ4[i,l,j,k] = Δ4[i,l,k,j] = Δ4[j,i,k,l] = Δ4[j,i,l,k] =
-        Δ4[j,k,i,l] = Δ4[j,k,l,i] = Δ4[j,l,i,k] = Δ4[j,l,k,i] =
-        Δ4[k,i,j,l] = Δ4[k,i,l,j] = Δ4[k,j,i,l] = Δ4[k,j,l,i] =
-        Δ4[k,l,i,j] = Δ4[k,l,j,i] = Δ4[l,i,j,k] = Δ4[l,i,k,j] =
-        Δ4[l,j,i,k] = Δ4[l,j,k,i] = Δ4[l,k,i,j] = Δ4[l,k,j,i] = t
-        #! format: on
-    end
-
-    return Δ4
-end
-
-function Δ4generic_ij!(Δ4_ij::Matrix{T}, i::Int, j::Int, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
-    rteps = eps(T)^(4/27)
-    d = length(λ)
-    λ_i = λ[i]
-    λ_j = λ[j]
+    coeff = c * α * (α - 1) * (α - 2) / 6
 
     @inbounds for l ∈ 1:d, k ∈ 1:l
-        λ_k = λ[k]
-        λ_l = λ[l]
-        λ_ij = λ_i - λ_j
-        λ_ik = λ_i - λ_k
-        λ_il = λ_i - λ_l
-        B_ik = (abs(λ_ik) < rteps)
-        B_il = (abs(λ_il) < rteps)
+        λₖ = λ[k]
+        λₗ = λ[l]
+        λᵢⱼ = λᵢ - λⱼ
+        λᵢₖ = λᵢ - λₖ
+        λᵢₗ = λᵢ - λₗ
+        Bᵢⱼ = (abs(λᵢⱼ) < rteps * (λᵢ + λⱼ))
+        Bᵢₖ = (abs(λᵢₖ) < rteps * (λᵢ + λₖ))
+        Bᵢₗ = (abs(λᵢₗ) < rteps * (λᵢ + λₗ))
 
-        if (abs(λ_ij) < rteps) && B_ik && B_il
-            t = (d3fλ[i] + d3fλ[j] + d3fλ[k] + d3fλ[l]) / 24
-        elseif B_ik && B_il
-            t = (Δ3[i, i, i] - Δ3[i, i, j]) / λ_ij
-        elseif B_il
-            t = (Δ3[i, i, j] - Δ3[i, j, k]) / λ_ik
+        if Bᵢⱼ && Bᵢₖ && Bᵢₗ
+            m = (λᵢ + λⱼ + λₖ + λₗ)/4
+            t =  coeff * m ^ (α - 3)
+        elseif Bᵢₖ && Bᵢₗ
+            t = (Δ3[i, k, l] - Δ3[j, k, l]) / λᵢⱼ
+        elseif Bᵢₗ
+            t = (Δ3[i, j, l] - Δ3[j, k, l]) / λᵢₖ
         else
-            t = (Δ3[i, j, k] - Δ3[j, k, l]) / λ_il
+            t = (Δ3[i, j, k] - Δ3[j, k, l]) / λᵢₗ
         end
 
         Δ4_ij[k, l] = t
@@ -388,30 +366,6 @@ function Δ4generic_ij!(Δ4_ij::Matrix{T}, i::Int, j::Int, Δ3::Array{T,3}, λ::
     end
 
     return Δ4_ij
-end
-
-function Δ2generic(λ::Vector{T}, fλ::Vector{T}, dfλ::Vector{T}) where {T<:Real}
-    d = length(λ)
-    Δ2 = Matrix{T}(undef, d, d)
-    return Δ2generic!(Δ2, λ, fλ, dfλ)
-end
-
-function Δ3generic(Δ2::Matrix{T}, λ::Vector{T}, d2fλ::Vector{T}) where {T<:Real}
-    d = length(λ)
-    Δ3 = Array{T,3}(undef, d, d, d)
-    return Δ3generic!(Δ3, Δ2, λ, d2fλ)
-end
-
-function Δ4generic(Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
-    d = length(λ)
-    Δ4 = Array{T,4}(undef, d, d, d, d)
-    return Δ4generic!(Δ4, Δ3, λ, d3fλ)
-end
-
-function Δ4generic_ij(i, j, Δ3::Array{T,3}, λ::Vector{T}, d3fλ::Vector{T}) where {T<:Real}
-    d = length(λ)
-    Δ4_ij = Matrix{T}(undef, d, d)
-    return Δ4generic_ij!(Δ4_ij, i, j, Δ3, λ, d3fλ)
 end
 
 function d_spectral(Δ2::Matrix{T}, K::Matrix{R}) where {T<:Real,R<:RealOrComplex{T}}

@@ -252,7 +252,7 @@ function set_initial_point!(arr::AbstractVector{T}, cone::EpiFastRenyiQKDTri{T,R
     Gmat = cone.Gmat
     Zmat = cone.Zmat
 
-    h(x) = x^((1 - cone.α) / cone.α)
+    h(x) = x^(inv(cone.α) - 1)
 
     γ = sqrt(T(d + 3) / (2d + 2) - cone.sα * sqrt(1 + T(4) / (d + 1)^2) / 2)
 
@@ -317,7 +317,7 @@ function update_feas(cone::EpiFastRenyiQKDTri)
     Gmat = cone.Gmat
     Zmat = cone.Zmat
 
-    h(x) = x^((1 - cone.α) / cone.α)
+    h(x) = x^(inv(cone.α) - 1)
 
     cone.is_feas = false
 
@@ -394,9 +394,6 @@ function update_grad(cone::EpiFastRenyiQKDTri)
     ZGmat = cone.ZGmat
     ZGmat2 = cone.ZGmat2
 
-    h(x) = x^(1 / α - 1)
-    dh(x) = (1 / α - 1) * x^(1 / α - 2)
-
     zi = inv(cone.z)
     cone.grad[1] = -zi
 
@@ -431,8 +428,7 @@ function update_grad(cone::EpiFastRenyiQKDTri)
         mul!(ZGmat2[i], Zρ_U[i]', ZGmat[i])
         mul!(cone.DhZmeat[i], ZGmat2[i], ZGmat2[i]', α, false)
     end
-    dhZρ_λ = [dh.(v) for v ∈ Zρ_λ]
-    Δ2generic!.(cone.Δ2_h_Zρ, Zρ_λ, cone.hZρ_λ, dhZρ_λ)
+    Δ2pow!.(cone.Δ2_h_Zρ, Zρ_λ, Ref(inv(α) - 1), Ref(one(α)))
     for i ∈ eachindex(blocks)
         Zmat2[i] .= cone.Δ2_h_Zρ[i] .* cone.DhZmeat[i]
         spectral_outer!(Zmat3[i], Zρ_U[i], Hermitian(Zmat2[i]), Zmat[i])
@@ -461,20 +457,15 @@ function update_hess_aux(cone::EpiFastRenyiQKDTri)
 
     α = cone.α
 
-    g(x) = x^α
-    dg(x) = α * x^(α - 1)
-    d2g(x) = α * (α - 1) * x^(α - 2)
-    g̃(x) = α * x^α
-    dg̃(x) = α^2 * x^(α - 1)
-    h(x) = x^(1 / α - 1)
-    dh(x) = (1 / α - 1) * x^(1 / α - 2)
-    d2h(x) = (1 / α - 1) * (1 / α - 2) * x^(1 / α - 3)
+    # dg(x) = α * x^(α - 1)
+    # g̃(x) = α * x^α
+    # h(x) = x^(inv(α) - 1)
 
     λ_ZGZ = cone.ZG_fact.S .^ 2
     Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
-    Δ2generic!(cone.Δ2_dg_ZGZ, λ_ZGZ, dg.(λ_ZGZ), d2g.(λ_ZGZ))
-    Δ2generic!(cone.Δ2_g̃_ZGZ, λ_ZGZ, g̃.(λ_ZGZ), dg̃.(λ_ZGZ))
-    Δ3generic!.(cone.Δ3_h_Zρ, cone.Δ2_h_Zρ, Zρ_λ, [d2h.(v) for v ∈ Zρ_λ])
+    Δ2pow!(cone.Δ2_dg_ZGZ, λ_ZGZ, α - 1, α)
+    Δ2pow!(cone.Δ2_g̃_ZGZ, λ_ZGZ, α, α)
+    Δ3pow!.(cone.Δ3_h_Zρ, cone.Δ2_h_Zρ, Zρ_λ, Ref(inv(α) - 1), Ref(one(α)))
 
     for i ∈ eachindex(cone.blocks)
         for j ∈ 1:cone.Zd[i]
@@ -544,15 +535,6 @@ function d2Ψdρ2!(
     Gk = cone.Gk
 
     α = cone.α
-    g(x) = x^α
-    dg(x) = α * x^(α - 1)
-    d2g(x) = α * (α - 1) * x^(α - 2)
-    g̃(x) = α * x^α
-    dg̃(x) = α^2 * x^(α - 1)
-
-    h(x) = x^(1 / α - 1)
-    dh(x) = (1 / α - 1) * x^(1 / α - 2)
-    d2h(x) = (1 / α - 1) * (1 / α - 2) * x^(1 / α - 3)
 
     #GG G' ∘ (Z_S^½ ⋅Z_S^½) ∘ Ddg(Z_S^½ Gρ Z_S^½)[⋅] ∘ (Z_S^½ ⋅Z_S^½) ∘ G
     U_ZGZ = cone.ZG_fact.U
@@ -696,16 +678,6 @@ function update_hess(cone::EpiFastRenyiQKDTri)
     ds_h_Zρ = cone.ds_h_Zρ
     sqrtShZρ = cone.sqrtShZρ
 
-    g(x) = x^α
-    dg(x) = α * x^(α - 1)
-    d2g(x) = α * (α - 1) * x^(α - 2)
-    g̃(x) = α * x^α
-    dg̃(x) = α^2 * x^(α - 1)
-
-    h(x) = x^(1 / α - 1)
-    dh(x) = (1 / α - 1) * x^(1 / α - 2)
-    d2h(x) = (1 / α - 1) * (1 / α - 2) * x^(1 / α - 3)
-
     H[1, 1] = abs2(zi) #∇hh = 1/z^2
     @views @. H[1, cone.ρ_idxs] = -abs2(zi) * cone.sα * cone.dΨdρ #∇hρ = -sα/z² * ∇ρ Ψ
     @views Hρ = H[cone.ρ_idxs, cone.ρ_idxs]
@@ -797,12 +769,10 @@ function update_dder3_aux(cone::EpiFastRenyiQKDTri)
     cone.hess_aux_updated || update_hess_aux(cone)
 
     α = cone.α
-    d2g̃(x) = α^2 * (α - 1) * x^(α - 2)
-    d3g(x) = α * (α - 1) * (α - 2) * x^(α - 3)
 
     λ_ZGZ = cone.ZG_fact.S .^ 2  # ZS^½ G ZS^½ = U Λ^2 U'
-    Δ3generic!(cone.Δ3_g̃_ZGZ, cone.Δ2_g̃_ZGZ, λ_ZGZ, d2g̃.(λ_ZGZ))  # D^2 g̃
-    Δ3generic!(cone.Δ3_dg_ZGZ, cone.Δ2_dg_ZGZ, λ_ZGZ, d3g.(λ_ZGZ))  # D^2 g'
+    Δ3pow!(cone.Δ3_g̃_ZGZ, cone.Δ2_g̃_ZGZ, λ_ZGZ, α, α)  # D^2 g̃
+    Δ3pow!(cone.Δ3_dg_ZGZ, cone.Δ2_dg_ZGZ, λ_ZGZ, α - 1, α)  # D^2 g'
 
     cone.dder3_aux_updated = true
     return
@@ -1100,7 +1070,7 @@ function d3Ψdρ3!(
     for i ∈ eachindex(blocks)
         fill!(Zmat[i], 0)
         @inbounds for k ∈ 1:cone.Zd[i], j ∈ 1:k
-            Δ4generic_ij!(cone.Δ4_ij_h_Zρ[i], j, k, Δ3_h_Zρ[i], Zρ_λ[i], d3h.(Zρ_λ[i]))
+            Δ4pow_ij!(cone.Δ4_ij_h_Zρ[i], j, k, Δ3_h_Zρ[i], Zρ_λ[i], inv(α) - 1, one(α))
             for b ∈ 1:cone.Zd[i]
                 for a ∈ 1:cone.Zd[i]
                     temp = 2 * cone.DhZmeat[i][j, b] * UZξU[i][b, a] * UZξU[i][a, k]
