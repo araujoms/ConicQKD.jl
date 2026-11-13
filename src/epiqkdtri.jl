@@ -307,10 +307,10 @@ end
 function update_hess_aux(cone::EpiQKDTri)
     @assert cone.grad_updated
 
-    Δ2!(cone.Δ2G, cone.Gρ_fact.values, cone.Gρ_λ_log)   #Γ(Λ_G)
+    Δ2!(cone.Δ2G, cone.Gρ_fact.values)   #Γ(Λ_G)
 
     Zρ_λ = [fact.values for fact ∈ cone.Zρ_fact]
-    Δ2!.(cone.Δ2Z, Zρ_λ, cone.Zρ_λ_log)   #Γ(Λ_Z)
+    Δ2!.(cone.Δ2Z, Zρ_λ)   #Γ(Λ_Z)
 
     return cone.hess_aux_updated = true
 end
